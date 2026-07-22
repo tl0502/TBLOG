@@ -1,0 +1,1 @@
+ALTER TABLE `analytics_report_state` ADD `report_json` text;

@@ -1,0 +1,21 @@
+CREATE TABLE `analytics_report_state` (
+	`id` text PRIMARY KEY NOT NULL,
+	`enabled` integer DEFAULT false NOT NULL,
+	`schedule` text DEFAULT 'off' NOT NULL,
+	`time_of_day` text DEFAULT '03:00' NOT NULL,
+	`timezone` text DEFAULT 'UTC' NOT NULL,
+	`active_provider` text,
+	`config_fingerprint` text,
+	`active_revision` text,
+	`source_generated_at` integer,
+	`published_at` integer,
+	`synced_through` text,
+	`last_attempt_at` integer,
+	`last_success_at` integer,
+	`last_failure_at` integer,
+	`last_error` text,
+	`sync_run_id` text,
+	`sync_locked_until` integer,
+	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
+);

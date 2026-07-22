@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tblog",
+  "main": ".output/server/index.mjs",
+  "compatibility_date": "2026-06-26",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "keep_vars": true,
+  "assets": {
+    "directory": ".output/public"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tblog-production-db",
+      "migrations_dir": "server/database/migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *", "2-59/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

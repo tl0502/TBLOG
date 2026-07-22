@@ -1,0 +1,3 @@
+CREATE INDEX `administrator_login_attempts_username_created_at_idx` ON `administrator_login_attempts` (`username`,`created_at`);--> statement-breakpoint
+CREATE INDEX `analytics_events_type_session_occurred_at_idx` ON `analytics_events` (`type`,`session_hash`,`occurred_at`);--> statement-breakpoint
+CREATE INDEX `analytics_visitor_days_visitor_hash_day_idx` ON `analytics_visitor_days` (`visitor_hash`,`day`);

@@ -1,0 +1,1 @@
+ALTER TABLE `site_settings` ADD `light_theme` text DEFAULT 'default' NOT NULL;

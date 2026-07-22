@@ -1,0 +1,1 @@
+ALTER TABLE `analytics_report_state` ADD `day_of_week` text DEFAULT 'mon' NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE `comment_settings` ADD `auto_moderation_enabled` integer DEFAULT false NOT NULL;

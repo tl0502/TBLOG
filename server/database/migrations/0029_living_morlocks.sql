@@ -1,0 +1,2 @@
+CREATE INDEX `comments_public_top_level_idx` ON `comments` (`post_id`,`status`,`parent_comment_id`,`created_at`,`id`);--> statement-breakpoint
+CREATE INDEX `comments_public_replies_idx` ON `comments` (`parent_comment_id`,`status`,`created_at`,`id`);
