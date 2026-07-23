@@ -1,18 +1,56 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq, exists, or, sql, type SQL } from 'drizzle-orm'
 import type { AppDatabase } from '../database/client'
 import { postMetadata, postTags, posts } from '../database/schema'
 import type {
   AdminPostEdit,
-  AdminPostListItem,
+  AdminPostListPage,
+  AdminPostListQuery,
   AdminPostRepository,
   CreatePostInput,
   UpdatePostFields,
   UpdatePostSeoMetadata
 } from './contracts/admin-write-repositories'
 
+// Escape the LIKE metacharacters a user might type so a search for "50%" or "a_b" matches literally
+// rather than as wildcards. Paired with `ESCAPE '\'` on the predicate below.
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (character) => `\\${character}`)
+}
+
 export function createAdminPostRepository(db: AppDatabase): AdminPostRepository {
   return {
-    async listPosts(): Promise<AdminPostListItem[]> {
+    async listPosts(query: AdminPostListQuery): Promise<AdminPostListPage> {
+      const conditions: Array<SQL | undefined> = []
+      if (query.status) {
+        conditions.push(eq(posts.status, query.status))
+      }
+      if (query.slug) {
+        conditions.push(eq(posts.slug, query.slug))
+      }
+      if (query.search) {
+        const pattern = `%${escapeLike(query.search)}%`
+        conditions.push(or(
+          sql`${posts.title} LIKE ${pattern} ESCAPE '\\'`,
+          sql`${posts.slug} LIKE ${pattern} ESCAPE '\\'`
+        ))
+      }
+      if (query.tagId) {
+        // Correlated EXISTS keeps tag membership to a single bound parameter (the tag id) and one
+        // statement — no per-row tag lookup and no unbounded id list that could exceed D1's limit.
+        conditions.push(exists(
+          db
+            .select({ postId: postTags.postId })
+            .from(postTags)
+            .where(and(eq(postTags.postId, posts.id), eq(postTags.tagId, query.tagId)))
+        ))
+      }
+      const where = and(...conditions)
+
+      // Two statements per invocation: the total (for the pager) and the windowed page. Both stay
+      // well within the free-plan per-invocation query budget regardless of table size.
+      const totalRows = await db.select({ value: count() }).from(posts).where(where)
+      const total = totalRows[0]?.value ?? 0
+
       const rows = await db.query.posts.findMany({
         columns: {
           id: true,
@@ -29,9 +67,12 @@ export function createAdminPostRepository(db: AppDatabase): AdminPostRepository 
         with: {
           tags: { columns: { tagId: true } }
         },
-        orderBy: [desc(posts.updatedAt), desc(posts.id)]
+        where,
+        orderBy: [desc(posts.updatedAt), desc(posts.id)],
+        limit: query.limit,
+        offset: query.offset
       })
-      return rows.map((row) => ({
+      const items = rows.map((row) => ({
         id: row.id,
         title: row.title,
         slug: row.slug,
@@ -44,6 +85,7 @@ export function createAdminPostRepository(db: AppDatabase): AdminPostRepository 
         categoryId: row.categoryId,
         tagIds: row.tags.map((tag) => tag.tagId)
       }))
+      return { items, total }
     },
 
     async findForEdit(id): Promise<AdminPostEdit | null> {

@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, shallowRef } from 'vue'
 import SettingsDomainPanel from '../../../components/admin/SettingsDomainPanel.vue'
 import SettingsProfileForm from '../../../components/admin/SettingsProfileForm.vue'
-import type { ProfileSettings, SeoSettings } from '../../../composables/useAdminApi'
+import type { ProfileSettings, SeoSettings, SiteSettings } from '../../../composables/useAdminApi'
 
 const api = vi.hoisted(() => ({
   apiErrorCode: vi.fn((error: unknown) => (error as { data?: { error?: { code?: string } } })?.data?.error?.code ?? null),
@@ -32,6 +33,13 @@ function seo(overrides: Partial<SeoSettings> = {}): SeoSettings {
   }
 }
 
+function site(): Pick<SiteSettings, 'siteName' | 'description'> {
+  return {
+    siteName: 'TBLOG',
+    description: 'A personal blog'
+  }
+}
+
 function profile(): ProfileSettings {
   return {
     name: 'Tian',
@@ -59,14 +67,42 @@ const stubs = {
   SettingsSecurityView: true
 }
 
-function mountPanel(domain = 'seo') {
-  return mount(SettingsDomainPanel, { props: { domain: domain as never }, global: { stubs } })
+const requestFetch = vi.fn()
+
+async function mountPanel(domain = 'seo', extraStubs: Record<string, unknown> = {}) {
+  const Host = defineComponent({
+    components: { SettingsDomainPanel },
+    setup() {
+      return { domain }
+    },
+    template: '<Suspense><SettingsDomainPanel :domain="domain" /></Suspense>'
+  })
+  const wrapper = mount(Host, { global: { stubs: { ...stubs, ...extraStubs } } })
+  await flushPromises()
+  return wrapper
 }
 
 describe('SettingsDomainPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.stubGlobal('refreshNuxtData', vi.fn().mockResolvedValue(undefined))
+    vi.stubGlobal('useRequestFetch', () => requestFetch)
+    vi.stubGlobal('useAsyncData', vi.fn(async (_key: string, handler: () => Promise<unknown>) => {
+      try {
+        const result = await handler()
+        return {
+          data: shallowRef(result),
+          error: shallowRef(null),
+          pending: shallowRef(false)
+        }
+      } catch (error) {
+        return {
+          data: shallowRef(null),
+          error: shallowRef(error),
+          pending: shallowRef(false)
+        }
+      }
+    }))
     api.apiErrorCode.mockImplementation(
       (error: unknown) => (error as { data?: { error?: { code?: string } } })?.data?.error?.code ?? null
     )
@@ -81,25 +117,28 @@ describe('SettingsDomainPanel', () => {
       const message = (error as { data?: { error?: { message?: string } } })?.data?.error?.message
       return message || fallback
     })
+    requestFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith('/seo')) return { data: seo(), meta: { domain: 'seo' } }
+      if (url.endsWith('/site')) return { data: site(), meta: { domain: 'site' } }
+      if (url.endsWith('/profile')) return { data: profile(), meta: { domain: 'profile', revision: 10 } }
+      throw new Error(`unexpected settings url: ${url}`)
+    })
   })
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('loads the domain settings and shows the save control', async () => {
-    api.fetchSettingsDomain.mockResolvedValue({ data: seo(), meta: { domain: 'seo' } })
-    const wrapper = mountPanel()
-    await flushPromises()
+  it('loads the domain settings via useAsyncData and shows the save control', async () => {
+    const wrapper = await mountPanel()
 
-    expect(api.fetchSettingsDomain).toHaveBeenCalledWith('seo')
+    expect(useAsyncData).toHaveBeenCalledWith('admin-settings-seo', expect.any(Function))
+    expect(requestFetch).toHaveBeenCalledWith('/api/v1/admin/settings/seo')
     expect(wrapper.find('[data-test="settings-loading"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="settings-save"]').exists()).toBe(true)
   })
 
   it('submits the loaded object and confirms success', async () => {
-    api.fetchSettingsDomain.mockResolvedValue({ data: seo(), meta: { domain: 'seo' } })
     api.updateSettingsDomain.mockResolvedValue({ data: seo({ robotsPolicy: 'noindex' }), meta: { domain: 'seo' } })
-    const wrapper = mountPanel()
-    await flushPromises()
+    const wrapper = await mountPanel()
 
     await wrapper.get('[data-test="settings-save"]').trigger('click')
     await flushPromises()
@@ -111,16 +150,13 @@ describe('SettingsDomainPanel', () => {
 
   it('saves only the selected profile section and preserves other unsaved edits', async () => {
     const persisted = profile()
-    api.fetchSettingsDomain.mockResolvedValue({ data: persisted, meta: { domain: 'profile' } })
+    requestFetch.mockResolvedValue({ data: persisted, meta: { domain: 'profile', revision: null } })
+    api.fetchSettingsDomain.mockResolvedValue({ data: persisted, meta: { domain: 'profile', revision: null } })
     api.updateSettingsDomain.mockImplementation(async (_domain: string, body: ProfileSettings) => ({
       data: structuredClone(body),
       meta: { domain: 'profile' }
     }))
-    const wrapper = mount(SettingsDomainPanel, {
-      props: { domain: 'profile' as never },
-      global: { stubs: { ...stubs, SettingsProfileForm } }
-    })
-    await flushPromises()
+    const wrapper = await mountPanel('profile', { SettingsProfileForm })
 
     const profileForm = wrapper.getComponent(SettingsProfileForm)
     const draft = profileForm.props('value') as ProfileSettings
@@ -165,14 +201,11 @@ describe('SettingsDomainPanel', () => {
 
   it('does not overwrite edits made while a profile section save is in flight', async () => {
     const persisted = profile()
+    requestFetch.mockResolvedValue({ data: persisted, meta: { domain: 'profile', revision: 10 } })
     api.fetchSettingsDomain.mockResolvedValue({ data: persisted, meta: { domain: 'profile', revision: 10 } })
     let resolveUpdate!: (value: unknown) => void
     api.updateSettingsDomain.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
-    const wrapper = mount(SettingsDomainPanel, {
-      props: { domain: 'profile' as never },
-      global: { stubs: { ...stubs, SettingsProfileForm } }
-    })
-    await flushPromises()
+    const wrapper = await mountPanel('profile', { SettingsProfileForm })
 
     const profileForm = wrapper.getComponent(SettingsProfileForm)
     await profileForm.get('[data-test="profile-name"]').setValue('Submitted name')
@@ -191,13 +224,10 @@ describe('SettingsDomainPanel', () => {
   })
 
   it('shows a scoped conflict message when the profile revision is stale', async () => {
+    requestFetch.mockResolvedValue({ data: profile(), meta: { domain: 'profile', revision: 10 } })
     api.fetchSettingsDomain.mockResolvedValue({ data: profile(), meta: { domain: 'profile', revision: 10 } })
     api.updateSettingsDomain.mockRejectedValue({ data: { error: { code: 'settings_conflict' } } })
-    const wrapper = mount(SettingsDomainPanel, {
-      props: { domain: 'profile' as never },
-      global: { stubs: { ...stubs, SettingsProfileForm } }
-    })
-    await flushPromises()
+    const wrapper = await mountPanel('profile', { SettingsProfileForm })
 
     const profileForm = wrapper.getComponent(SettingsProfileForm)
     await profileForm.get('[data-test="profile-save-identity"]').trigger('click')
@@ -212,11 +242,9 @@ describe('SettingsDomainPanel', () => {
   })
 
   it('shows a validation summary and forwards issues on validation_failed', async () => {
-    api.fetchSettingsDomain.mockResolvedValue({ data: seo(), meta: { domain: 'seo' } })
     api.updateSettingsDomain.mockRejectedValue({ data: { error: { code: 'validation_failed' } } })
     api.settingsValidationIssues.mockReturnValue([{ path: ['robotsPolicy'], message: 'Required' }])
-    const wrapper = mountPanel()
-    await flushPromises()
+    const wrapper = await mountPanel()
 
     await wrapper.get('[data-test="settings-save"]').trigger('click')
     await flushPromises()
@@ -227,10 +255,8 @@ describe('SettingsDomainPanel', () => {
   })
 
   it('falls back to a generic message for a non-validation save failure', async () => {
-    api.fetchSettingsDomain.mockResolvedValue({ data: seo(), meta: { domain: 'seo' } })
     api.updateSettingsDomain.mockRejectedValue({ data: { error: { message: 'Server exploded' } } })
-    const wrapper = mountPanel()
-    await flushPromises()
+    const wrapper = await mountPanel()
 
     await wrapper.get('[data-test="settings-save"]').trigger('click')
     await flushPromises()
@@ -239,9 +265,8 @@ describe('SettingsDomainPanel', () => {
   })
 
   it('surfaces a load error when the fetch rejects', async () => {
-    api.fetchSettingsDomain.mockRejectedValue({ data: { error: { message: 'No access' } } })
-    const wrapper = mountPanel()
-    await flushPromises()
+    requestFetch.mockRejectedValue({ data: { error: { message: 'No access' } } })
+    const wrapper = await mountPanel()
 
     expect(wrapper.get('[data-test="settings-load-error"]').text()).toContain('No access')
     expect(wrapper.find('[data-test="settings-save"]').exists()).toBe(false)

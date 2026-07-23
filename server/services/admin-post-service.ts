@@ -6,7 +6,8 @@ import { createNoOpSearchProvider } from '../providers/search/no-op-search-provi
 import type { SearchProvider } from '../providers/search/search-provider'
 import type {
   AdminPostEdit,
-  AdminPostListItem,
+  AdminPostListPage,
+  AdminPostListQuery,
   AdminPostRepository,
   UpdatePostSeoMetadata
 } from '../repositories/contracts/admin-write-repositories'
@@ -220,8 +221,8 @@ export function createAdminPostService(dependencies: AdminPostServiceDependencie
   }
 
   return {
-    list(): Promise<AdminPostListItem[]> {
-      return adminPostRepository.listPosts()
+    list(query: AdminPostListQuery): Promise<AdminPostListPage> {
+      return adminPostRepository.listPosts(query)
     },
 
     getForEdit(id: string): Promise<AdminPostEdit> {

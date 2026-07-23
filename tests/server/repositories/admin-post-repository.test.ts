@@ -197,16 +197,82 @@ describe('admin post repository', () => {
     expect(await repository.deletePost('p1')).toBeNull()
   })
 
-  it('lists posts newest-updated first', async () => {
+  it('lists posts newest-updated first with tag ids and reports the total', async () => {
     const { repository } = setup()
     await repository.createPost({ ...draft, id: 'p1', slug: 'p1' })
     await repository.createPost({ ...draft, id: 'p2', slug: 'p2' })
     await repository.setTags('p1', ['t1'])
 
-    const list = await repository.listPosts()
-    expect(list.map((post) => post.id)).toContain('p1')
-    expect(list.map((post) => post.id)).toContain('p2')
-    expect(list.find((post) => post.id === 'p1')?.tagIds).toEqual(['t1'])
-    expect(list.find((post) => post.id === 'p1')?.categoryId).toBe('cat1')
+    const page = await repository.listPosts({ offset: 0, limit: 25 })
+    expect(page.total).toBe(2)
+    expect(page.items.map((post) => post.id)).toEqual(['p2', 'p1'])
+    expect(page.items.find((post) => post.id === 'p1')?.tagIds).toEqual(['t1'])
+    expect(page.items.find((post) => post.id === 'p1')?.categoryId).toBe('cat1')
+  })
+
+  it('windows results with offset/limit while total stays the full match count', async () => {
+    const { repository } = setup()
+    await repository.createPost({ ...draft, id: 'p1', slug: 'p1' })
+    await repository.createPost({ ...draft, id: 'p2', slug: 'p2' })
+    await repository.createPost({ ...draft, id: 'p3', slug: 'p3' })
+
+    const page = await repository.listPosts({ offset: 1, limit: 1 })
+    // Newest-first ordering is p3, p2, p1 (equal timestamps break ties on id desc); offset 1 → p2.
+    expect(page.items.map((post) => post.id)).toEqual(['p2'])
+    expect(page.total).toBe(3)
+  })
+
+  it('filters by status without counting the excluded rows', async () => {
+    const { repository } = setup()
+    await repository.createPost({ ...draft, id: 'p1', slug: 'p1' })
+    await repository.createPost({ ...draft, id: 'p2', slug: 'p2' })
+    await repository.setStatus('p2', 'published', new Date('2026-06-10T00:00:00.000Z'))
+
+    const published = await repository.listPosts({ offset: 0, limit: 25, status: 'published' })
+    expect(published.items.map((post) => post.id)).toEqual(['p2'])
+    expect(published.total).toBe(1)
+
+    const drafts = await repository.listPosts({ offset: 0, limit: 25, status: 'draft' })
+    expect(drafts.items.map((post) => post.id)).toEqual(['p1'])
+  })
+
+  it('searches title or slug case-insensitively and treats wildcards literally', async () => {
+    const { repository } = setup()
+    await repository.createPost({ ...draft, id: 'p1', slug: 'hello-world', title: 'Hello World' })
+    await repository.createPost({ ...draft, id: 'p2', slug: 'bye', title: 'Goodbye' })
+    await repository.createPost({ ...draft, id: 'p3', slug: 'a_b', title: 'Underscore' })
+    await repository.createPost({ ...draft, id: 'p4', slug: 'axb', title: 'Other' })
+
+    expect((await repository.listPosts({ offset: 0, limit: 25, search: 'HELLO' })).items.map((p) => p.id)).toEqual(['p1'])
+    // "Goodbye" title and "bye" slug both match; "Hello World" does not.
+    expect((await repository.listPosts({ offset: 0, limit: 25, search: 'bye' })).items.map((p) => p.id)).toEqual(['p2'])
+    // The underscore is a LIKE wildcard; escaping keeps it literal so only slug 'a_b' matches.
+    expect((await repository.listPosts({ offset: 0, limit: 25, search: 'a_b' })).items.map((p) => p.id)).toEqual(['p3'])
+  })
+
+  it('filters by tag membership via a single correlated query', async () => {
+    const { repository } = setup()
+    await repository.createPost({ ...draft, id: 'p1', slug: 'p1' })
+    await repository.createPost({ ...draft, id: 'p2', slug: 'p2' })
+    await repository.setTags('p1', ['t1', 't2'])
+    await repository.setTags('p2', ['t2'])
+
+    const t1 = await repository.listPosts({ offset: 0, limit: 25, tagId: 't1' })
+    expect(t1.items.map((post) => post.id)).toEqual(['p1'])
+    expect(t1.total).toBe(1)
+
+    const t2 = await repository.listPosts({ offset: 0, limit: 25, tagId: 't2' })
+    expect(t2.items.map((post) => post.id).sort()).toEqual(['p1', 'p2'])
+    expect(t2.total).toBe(2)
+  })
+
+  it('filters by exact slug for singleton lookups', async () => {
+    const { repository } = setup()
+    await repository.createPost({ ...draft, id: 'p1', slug: 'about' })
+    await repository.createPost({ ...draft, id: 'p2', slug: 'hello' })
+
+    const page = await repository.listPosts({ offset: 0, limit: 1, slug: 'about' })
+    expect(page.items.map((post) => post.id)).toEqual(['p1'])
+    expect(page.total).toBe(1)
   })
 })

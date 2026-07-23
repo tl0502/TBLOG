@@ -356,9 +356,30 @@ export function applyAdminSetupMigrations() {
   })
 }
 
-/** Admin post list. SSR forwards the session cookie; the page is gated by the admin middleware. */
-export function useAdminPosts() {
-  return useFetch<Envelope<AdminPostListItemView[]>>('/api/v1/admin/posts')
+export interface AdminPostListQuery {
+  offset: number
+  limit: number
+  search?: string
+  status?: AdminPostStatus
+  tagId?: string
+  slug?: string
+}
+
+export interface AdminPostListMeta {
+  total: number
+  offset: number
+  limit: number
+}
+
+/**
+ * Reactive admin post list. Query mutations refetch under one deterministic key so SSR payload
+ * hydrates the first page and later filter/page changes reuse the same useFetch slot.
+ */
+export function useAdminPosts(query: MaybeRefOrGetter<AdminPostListQuery> = { offset: 0, limit: 25 }) {
+  return useFetch<Envelope<AdminPostListItemView[], AdminPostListMeta>>('/api/v1/admin/posts', {
+    key: 'admin-posts',
+    query: computed(() => toValue(query))
+  })
 }
 
 /** Category/tag id-name options for editor metadata controls. */

@@ -73,22 +73,40 @@ describe('PostListTable', () => {
     expect(wrapper.text()).toContain('暂无文章')
   })
 
-  it('filters by title or slug, status, and tag', async () => {
+  it('emits server-side filter updates instead of filtering the local page client-side', async () => {
     const wrapper = mountTable()
 
-    await wrapper.get('input[type="search"]').setValue('first-post')
+    await wrapper.get('[data-test="post-search"]').setValue('first-post')
+    await wrapper.get('[data-test="post-search"]').trigger('change')
+    expect(wrapper.emitted('update:search')?.at(-1)).toEqual(['first-post'])
+    // The page still shows every row the parent handed it until the server responds.
     expect(wrapper.text()).toContain('First Post')
-    expect(wrapper.text()).not.toContain('About')
-
-    await wrapper.get('input[type="search"]').setValue('')
-    await wrapper.findAll('select')[0].setValue('published')
-    expect(wrapper.text()).not.toContain('First Post')
     expect(wrapper.text()).toContain('About')
 
-    await wrapper.findAll('select')[0].setValue('all')
-    await wrapper.findAll('select')[1].setValue('tag-vue')
-    expect(wrapper.text()).toContain('First Post')
-    expect(wrapper.text()).not.toContain('About')
+    await wrapper.get('[data-test="post-status-filter"]').setValue('published')
+    expect(wrapper.emitted('update:status')?.at(-1)).toEqual(['published'])
+
+    await wrapper.get('[data-test="post-tag-filter"]').setValue('tag-vue')
+    expect(wrapper.emitted('update:tagId')?.at(-1)).toEqual(['tag-vue'])
+  })
+
+  it('shows pagination controls and emits page events when total exceeds the page size', async () => {
+    const wrapper = mount(PostListTable, {
+      props: {
+        posts,
+        tags: [{ id: 'tag-vue', name: 'Vue' }],
+        categories: [],
+        total: 30,
+        offset: 0,
+        limit: 25
+      },
+      global: { stubs: { NuxtLink } }
+    })
+
+    expect(wrapper.get('[data-test="post-pagination"]').text()).toContain('1')
+    expect(wrapper.get('[data-test="post-page-prev"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="post-page-next"]').trigger('click')
+    expect(wrapper.emitted('next')).toEqual([[]])
   })
 
   it('emits publish, category, and tag updates from row controls', async () => {

@@ -1,6 +1,7 @@
 import {
   createPostInputSchema,
   postIdParamSchema,
+  postListQuerySchema,
   previewInputSchema,
   updatePostInputSchema
 } from '../../../server/validation/admin-post-input'
@@ -113,6 +114,41 @@ describe('admin post input validation', () => {
     it('accepts a non-empty id and rejects blank', () => {
       expect(postIdParamSchema.parse('p1')).toBe('p1')
       expect(() => postIdParamSchema.parse('   ')).toThrow()
+    })
+  })
+
+  describe('list query', () => {
+    it('defaults to offset 0 and limit 25', () => {
+      expect(postListQuerySchema.parse({})).toEqual({ offset: 0, limit: 25 })
+    })
+
+    it('coerces pagination and accepts search, status, tagId, and slug filters', () => {
+      expect(postListQuerySchema.parse({
+        offset: '25',
+        limit: '50',
+        search: '  hello  ',
+        status: 'published',
+        tagId: 't1',
+        slug: 'about'
+      })).toEqual({
+        offset: 25,
+        limit: 50,
+        search: 'hello',
+        status: 'published',
+        tagId: 't1',
+        slug: 'about'
+      })
+    })
+
+    it('falls back to defaults for junk pagination and drops invalid filters', () => {
+      expect(postListQuerySchema.parse({
+        offset: '-1',
+        limit: '999',
+        status: 'archived',
+        search: '   ',
+        tagId: '',
+        slug: ''
+      })).toEqual({ offset: 0, limit: 25 })
     })
   })
 })

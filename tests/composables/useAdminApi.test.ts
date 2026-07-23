@@ -20,6 +20,7 @@ import {
   useAdminAnalyticsReportStatus,
   useAdminCommentCounts,
   useAdminComments,
+  useAdminPosts,
   useAdminSessionSnapshot,
   useAdminTaxonomyOptions,
   useDashboardMetrics
@@ -43,11 +44,14 @@ describe('useAdminApi', () => {
     const useFetch = vi.fn()
     vi.stubGlobal('useFetch', useFetch)
     const offset = shallowRef(20)
-    const query = () => ({ status: 'pending' as const, offset: offset.value, limit: 20 })
+    const commentQuery = () => ({ status: 'pending' as const, offset: offset.value, limit: 20 })
+    const postOffset = shallowRef(0)
+    const postQuery = () => ({ offset: postOffset.value, limit: 25, status: 'draft' as const })
 
     useDashboardMetrics()
-    useAdminComments(query)
+    useAdminComments(commentQuery)
     useAdminCommentCounts()
+    useAdminPosts(postQuery)
 
     expect(useFetch).toHaveBeenNthCalledWith(1, '/api/v1/admin/dashboard', {
       key: 'admin-dashboard-metrics'
@@ -63,6 +67,14 @@ describe('useAdminApi', () => {
     expect(useFetch).toHaveBeenNthCalledWith(3, '/api/v1/admin/comments/counts', {
       key: 'admin-comment-counts'
     })
+
+    const postOptions = useFetch.mock.calls[3]?.[1]
+    expect(useFetch.mock.calls[3]?.[0]).toBe('/api/v1/admin/posts')
+    expect(postOptions.key).toBe('admin-posts')
+    expect(isRef(postOptions.query)).toBe(true)
+    expect(postOptions.query.value).toEqual({ offset: 0, limit: 25, status: 'draft' })
+    postOffset.value = 25
+    expect(postOptions.query.value).toEqual({ offset: 25, limit: 25, status: 'draft' })
   })
 
   it('uses the exact moderation endpoints, methods, and bodies', async () => {

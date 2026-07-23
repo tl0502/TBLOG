@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRaw } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import SettingsCommentForm from '~/components/admin/SettingsCommentForm.vue'
 import SettingsProfileForm from '~/components/admin/SettingsProfileForm.vue'
 import SettingsSecurityView from '~/components/admin/SettingsSecurityView.vue'
@@ -16,6 +16,7 @@ import {
   type SettingsDomain,
   type SettingsValidationIssue
 } from '~/composables/useAdminApi'
+import type { Envelope } from '~/composables/usePublicApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
 import { publicResourceKey } from '~/composables/useStaleFirstPublicResource'
 
@@ -35,9 +36,49 @@ const profileSectionFields = {
   journey: ['journeyEnabled', 'journey']
 } as const satisfies Record<ProfileSettingsSection, readonly (keyof ProfileSettings)[]>
 
+interface DomainLoadResult {
+  form: SettingsByDomain[SettingsDomain]
+  seoSiteName: string
+  seoSiteDescription: string | null
+}
+
+// useAsyncData so SSR can populate the Nuxt payload and the client reuses it instead of refetching.
+const {
+  data: loaded,
+  error: loadErrorRef,
+  pending: loading
+} = await useAsyncData<DomainLoadResult>(
+  `admin-settings-${props.domain}`,
+  async () => {
+    const requestFetch = useRequestFetch()
+    if (props.domain === 'seo') {
+      // Load the SEO config and its auxiliary Site display data concurrently instead of in series.
+      // The Site read is tolerant: the SEO form stays usable with safe fallbacks if it fails.
+      const [response, site] = await Promise.all([
+        requestFetch<Envelope<SettingsByDomain['seo'], { domain: 'seo' }>>('/api/v1/admin/settings/seo'),
+        requestFetch<Envelope<SettingsByDomain['site'], { domain: 'site' }>>('/api/v1/admin/settings/site')
+          .catch(() => null)
+      ])
+      return {
+        form: structuredClone(response.data) as SettingsByDomain[SettingsDomain],
+        seoSiteName: site?.data.siteName ?? 'TBLOG',
+        seoSiteDescription: site?.data.description ?? null
+      }
+    }
+    const response = await requestFetch<Envelope<SettingsByDomain[SettingsDomain], { domain: SettingsDomain }>>(
+      `/api/v1/admin/settings/${props.domain}`
+    )
+    return {
+      form: structuredClone(response.data) as SettingsByDomain[SettingsDomain],
+      seoSiteName: 'TBLOG',
+      seoSiteDescription: null
+    }
+  }
+)
+
 const form = ref<SettingsByDomain[SettingsDomain] | null>(null)
-const loading = ref(true)
-const loadError = ref('')
+const seoSiteName = ref('TBLOG')
+const seoSiteDescription = ref<string | null>(null)
 const saving = ref(false)
 const saveError = ref('')
 const saved = ref(false)
@@ -46,35 +87,18 @@ const formInvalid = ref(false)
 const savingProfileSection = ref<ProfileSettingsSection | null>(null)
 const savedProfileSection = ref<ProfileSettingsSection | null>(null)
 const profileErrorSection = ref<ProfileSettingsSection | null>(null)
-const seoSiteName = ref('TBLOG')
-const seoSiteDescription = ref<string | null>(null)
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    if (props.domain === 'seo') {
-      // Load the SEO config and its auxiliary Site display data concurrently instead of in series.
-      // The Site read is tolerant: the SEO form stays usable with safe fallbacks if it fails.
-      const [response, site] = await Promise.all([
-        fetchSettingsDomain('seo'),
-        fetchSettingsDomain('site').catch(() => null)
-      ])
-      form.value = structuredClone(response.data) as SettingsByDomain[SettingsDomain]
-      if (site) {
-        seoSiteName.value = site.data.siteName
-        seoSiteDescription.value = site.data.description
-      }
-    } else {
-      const response = await fetchSettingsDomain(props.domain)
-      form.value = structuredClone(response.data) as SettingsByDomain[SettingsDomain]
-    }
-  } catch (error) {
-    loadError.value = apiErrorMessage(error, t('settings.loadError'))
-  } finally {
-    loading.value = false
-  }
-}
+watch(loaded, (value) => {
+  if (!value) return
+  form.value = structuredClone(toRaw(value.form)) as SettingsByDomain[SettingsDomain]
+  seoSiteName.value = value.seoSiteName
+  seoSiteDescription.value = value.seoSiteDescription
+}, { immediate: true })
+
+const loadError = computed(() => {
+  if (!loadErrorRef.value) return ''
+  return apiErrorMessage(loadErrorRef.value, t('settings.loadError'))
+})
 
 async function save() {
   if (!form.value || saving.value || formInvalid.value) {
@@ -178,8 +202,6 @@ async function saveProfileSection(section: ProfileSettingsSection) {
   }
 }
 
-// Kick off the initial load; the panel remounts (fresh load) when the active tab changes.
-void load()
 </script>
 
 <template>

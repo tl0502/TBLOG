@@ -67,7 +67,10 @@ describe('admin posts page', () => {
     vi.stubGlobal('definePageMeta', vi.fn())
     vi.stubGlobal('confirm', vi.fn(() => true))
     api.useAdminPosts.mockResolvedValue({
-      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article' }], meta: {} }),
+      data: shallowRef({
+        data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article' }],
+        meta: { total: 1, offset: 0, limit: 25 }
+      }),
       error: shallowRef(null),
       pending: shallowRef(false),
       refresh: vi.fn()
@@ -92,7 +95,7 @@ describe('admin posts page', () => {
 
   it('creates the taxonomy and deferred integration reads before the posts read resolves', async () => {
     const postsResult = {
-      data: shallowRef({ data: [], meta: {} }),
+      data: shallowRef({ data: [], meta: { total: 0, offset: 0, limit: 25 } }),
       error: shallowRef(null),
       pending: shallowRef(false),
       refresh: vi.fn()
@@ -113,7 +116,7 @@ describe('admin posts page', () => {
   it('updates featured state locally without refreshing the post list', async () => {
     const refresh = vi.fn()
     api.useAdminPosts.mockResolvedValueOnce({
-      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'published', featured: false, updatedAt: '2026-07-20', publishedAt: '2026-07-20', tagIds: [] }], meta: {} }),
+      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'published', featured: false, updatedAt: '2026-07-20', publishedAt: '2026-07-20', tagIds: [] }], meta: { total: 1, offset: 0, limit: 25 } }),
       error: shallowRef(null), pending: shallowRef(false), refresh
     })
     api.updatePost.mockResolvedValueOnce({ data: { id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'published', featured: true, updatedAt: '2026-07-20', publishedAt: '2026-07-20', tagIds: [] }, meta: {} })
@@ -129,7 +132,7 @@ describe('admin posts page', () => {
   it('removes a deleted post locally without refreshing the post list', async () => {
     const refresh = vi.fn()
     api.useAdminPosts.mockResolvedValueOnce({
-      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, tagIds: [] }], meta: {} }),
+      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, tagIds: [] }], meta: { total: 1, offset: 0, limit: 25 } }),
       error: shallowRef(null), pending: shallowRef(false), refresh
     })
     api.deletePost.mockResolvedValueOnce({ data: { id: 'post-1' }, meta: {} })
@@ -183,7 +186,7 @@ describe('admin posts page', () => {
 
   it('runs bounded batch publish, category, and tag changes through serial PATCH calls', async () => {
     api.useAdminPosts.mockResolvedValueOnce({
-      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, categoryId: 'category-1', tagIds: [] }], meta: {} }),
+      data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, categoryId: 'category-1', tagIds: [] }], meta: { total: 1, offset: 0, limit: 25 } }),
       error: shallowRef(null), pending: shallowRef(false), refresh: vi.fn()
     })
     api.updatePost

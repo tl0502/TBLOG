@@ -15,6 +15,26 @@ export interface AdminPostListItem {
   tagIds: string[]
 }
 
+/**
+ * A single page of the admin post list. `status`/`search`/`tagId`/`slug` narrow the set server-side
+ * so the client never ships the whole table; `offset`/`limit` window the result. Filters are optional
+ * and combine with AND. `slug` is an exact match for singleton lookups (e.g. About).
+ */
+export interface AdminPostListQuery {
+  offset: number
+  limit: number
+  search?: string
+  status?: PostStatus
+  tagId?: string
+  slug?: string
+}
+
+export interface AdminPostListPage {
+  items: AdminPostListItem[]
+  /** Total rows matching the filters, ignoring the offset/limit window — drives the pager. */
+  total: number
+}
+
 export interface PostSeoMetadata {
   seoTitle: string | null
   seoDescription: string | null
@@ -57,7 +77,7 @@ export type UpdatePostSeoMetadata = Partial<PostSeoMetadata>
  * callers order writes so a mid-sequence failure leaves a recoverable draft, never a broken post.
  */
 export interface AdminPostRepository {
-  listPosts(): Promise<AdminPostListItem[]>
+  listPosts(query: AdminPostListQuery): Promise<AdminPostListPage>
   findForEdit(id: string): Promise<AdminPostEdit | null>
   createPost(input: CreatePostInput): Promise<void>
   updatePostFields(id: string, fields: UpdatePostFields): Promise<void>

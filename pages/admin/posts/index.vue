@@ -1,12 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef, watch } from 'vue'
 import PostListTable from '~/components/admin/PostListTable.vue'
-import { apiErrorMessage, deletePost, updatePost, useLazyAdminIntegrations, useAdminPosts, useAdminTaxonomyOptions, type UpdatePostBody } from '~/composables/useAdminApi'
+import {
+  apiErrorMessage,
+  deletePost,
+  updatePost,
+  useLazyAdminIntegrations,
+  useAdminPosts,
+  useAdminTaxonomyOptions,
+  type AdminPostListQuery,
+  type AdminPostStatus,
+  type UpdatePostBody
+} from '~/composables/useAdminApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
 
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
-const postsRequest = useAdminPosts()
+const PAGE_SIZE = 25
+const search = shallowRef('')
+const status = shallowRef<'all' | AdminPostStatus>('all')
+const tagId = shallowRef('')
+const offset = shallowRef(0)
+const query = computed<AdminPostListQuery>(() => ({
+  offset: offset.value,
+  limit: PAGE_SIZE,
+  ...(search.value.trim() ? { search: search.value.trim() } : {}),
+  ...(status.value === 'all' ? {} : { status: status.value }),
+  ...(tagId.value ? { tagId: tagId.value } : {})
+}))
+
+const postsRequest = useAdminPosts(query)
 const taxonomyRequest = useAdminTaxonomyOptions()
 // The search-sync warning is non-critical, so its integration read is created lazily now but only
 // executed client-side after mount — it never blocks the posts list's first paint.
@@ -21,9 +44,23 @@ const pendingIds = shallowRef<string[]>([])
 const processingQueue = shallowRef(false)
 const actionQueue: Array<{ id: string; label: string; fallback: string; action: () => Promise<void> }> = []
 const { t } = useTblogI18n()
+const total = computed(() => data.value?.meta.total ?? 0)
 const searchSyncError = computed(() => integrationData.value?.data.find((item) =>
   item.capability === 'search' && item.providerKey === 'algolia'
 )?.lastError ?? '')
+
+// Keep the offset on a valid page when the match set shrinks (filters or deletes).
+watch(total, (currentTotal) => {
+  const lastPageOffset = currentTotal === 0
+    ? 0
+    : Math.floor((currentTotal - 1) / PAGE_SIZE) * PAGE_SIZE
+  if (offset.value > lastPageOffset) offset.value = lastPageOffset
+})
+
+watch([search, status, tagId], () => {
+  offset.value = 0
+  noticeMessage.value = ''
+})
 
 async function refreshIntegrationStatus() {
   try { await refreshIntegrations() } catch { /* the saved post state remains authoritative */ }
@@ -81,7 +118,14 @@ function handleDelete(id: string) {
   queuePostAction(id, async () => {
     await deletePost(id)
     if (data.value) {
-      data.value = { ...data.value, data: data.value.data.filter((post) => post.id !== id) }
+      data.value = {
+        ...data.value,
+        data: data.value.data.filter((post) => post.id !== id),
+        meta: {
+          ...data.value.meta,
+          total: Math.max(0, (data.value.meta.total ?? 1) - 1)
+        }
+      }
     } else {
       await refresh()
     }
@@ -165,6 +209,14 @@ function bulkFeatured(payload: { ids: string[]; featured: boolean }) {
 function handleFeature(id: string, featured: boolean) {
   patchPost(id, { featured })
 }
+
+function previousPage() {
+  offset.value = Math.max(0, offset.value - PAGE_SIZE)
+}
+
+function nextPage() {
+  offset.value = offset.value + PAGE_SIZE
+}
 </script>
 
 <template>
@@ -191,6 +243,17 @@ function handleFeature(id: string, featured: boolean) {
       :tags="taxonomyData?.data.tags ?? []"
       :categories="taxonomyData?.data.categories ?? []"
       :pending-ids="pendingIds"
+      :search="search"
+      :status="status"
+      :tag-id="tagId"
+      :total="total"
+      :offset="offset"
+      :limit="PAGE_SIZE"
+      @update:search="search = $event"
+      @update:status="status = $event"
+      @update:tag-id="tagId = $event"
+      @prev="previousPage"
+      @next="nextPage"
       @delete="handleDelete"
       @feature="handleFeature"
       @publish="patchPost($event, { status: 'published' })"

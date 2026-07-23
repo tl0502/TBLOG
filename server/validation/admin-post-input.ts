@@ -83,6 +83,20 @@ export const postIdParamSchema = z.string().trim().min(1)
 
 export const postSlugParamSchema = z.string().trim().min(1).max(200)
 
+// Post-list query. Pagination and filters come from the URL, so every field tolerates junk: a bad
+// offset/limit falls back to its default and an unknown status/blank filter is simply dropped rather
+// than failing the whole list request. `limit` is capped so a caller can't request an unbounded page.
+// `slug` is an exact match (singleton lookup like About); `search` is a substring on title/slug.
+export const postListQuerySchema = z.object({
+  offset: z.coerce.number().int().min(0).catch(0),
+  limit: z.coerce.number().int().min(1).max(100).catch(25),
+  search: z.string().trim().min(1).max(200).optional().catch(undefined),
+  status: z.enum(postStatusValues).optional().catch(undefined),
+  tagId: z.string().trim().min(1).optional().catch(undefined),
+  slug: z.string().trim().min(1).max(200).optional().catch(undefined)
+})
+
 export type CreatePostInputDto = z.infer<typeof createPostInputSchema>
 export type UpdatePostInputDto = z.infer<typeof updatePostInputSchema>
 export type PreviewInputDto = z.infer<typeof previewInputSchema>
+export type PostListQueryDto = z.infer<typeof postListQuerySchema>

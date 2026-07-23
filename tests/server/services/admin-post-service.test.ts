@@ -51,8 +51,9 @@ function createFakeRepo(seed: AdminPostEdit[] = [], operations: string[] = []) {
     delete: [] as string[]
   }
   const repository: AdminPostRepository = {
-    async listPosts() {
-      return [...posts.values()]
+    async listPosts(query) {
+      const all = [...posts.values()]
+      return { items: all.slice(query.offset, query.offset + query.limit), total: all.length }
     },
     async findForEdit(id) {
       const post = posts.get(id)
@@ -240,6 +241,19 @@ function build(
 }
 
 describe('admin post service', () => {
+  it('lists posts through the repository, forwarding the paging window and total', async () => {
+    const { service } = build([
+      editFixture({ id: 'p1', slug: 'p1' }),
+      editFixture({ id: 'p2', slug: 'p2' }),
+      editFixture({ id: 'p3', slug: 'p3' })
+    ])
+
+    const page = await service.list({ offset: 1, limit: 1 })
+
+    expect(page.total).toBe(3)
+    expect(page.items.map((post) => post.id)).toEqual(['p2'])
+  })
+
   it('creates a draft, derives the slug, stores markdown and tags, and does not invalidate caches', async () => {
     const { service, repo, content, deleted } = build()
 

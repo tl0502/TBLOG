@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import type { AdminPostListItemView } from '~/composables/useAdminApi'
+import type { AdminPostListItemView, AdminPostStatus } from '~/composables/useAdminApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
 
 interface Props {
@@ -8,9 +8,26 @@ interface Props {
   tags?: Array<{ id: string; name: string }>
   categories?: Array<{ id: string; name: string }>
   pendingIds?: string[]
+  /** Server-owned filters; the page refetches when these change. */
+  search?: string
+  status?: 'all' | AdminPostStatus
+  tagId?: string
+  total?: number
+  offset?: number
+  limit?: number
 }
 
-const props = withDefaults(defineProps<Props>(), { tags: () => [], categories: () => [], pendingIds: () => [] })
+const props = withDefaults(defineProps<Props>(), {
+  tags: () => [],
+  categories: () => [],
+  pendingIds: () => [],
+  search: '',
+  status: 'all',
+  tagId: '',
+  total: 0,
+  offset: 0,
+  limit: 25
+})
 const emit = defineEmits<{
   delete: [id: string]
   feature: [id: string, featured: boolean]
@@ -22,11 +39,17 @@ const emit = defineEmits<{
   bulkCategory: [payload: { ids: string[]; categoryId: string }]
   bulkTag: [payload: { ids: string[]; tagId: string; mode: 'add' | 'remove' }]
   bulkFeatured: [payload: { ids: string[]; featured: boolean }]
+  'update:search': [value: string]
+  'update:status': [value: 'all' | AdminPostStatus]
+  'update:tagId': [value: string]
+  prev: []
+  next: []
 }>()
 const { formatDate, t } = useTblogI18n()
-const search = shallowRef('')
-const status = shallowRef<'all' | AdminPostListItemView['status']>('all')
-const tagId = shallowRef('')
+// Local mirror keeps the search input snappy while the parent owns the authoritative query.
+const searchDraft = shallowRef(props.search)
+watch(() => props.search, (value) => { searchDraft.value = value })
+
 const selectedIds = ref<string[]>([])
 const tagDrafts = reactive<Record<string, string[]>>({})
 const bulkCategoryId = shallowRef('')
@@ -89,26 +112,31 @@ function toggleSelection(id: string, selected: boolean) {
     : selectedIds.value.filter((candidate) => candidate !== id)
 }
 
-const filteredPosts = computed(() => {
-  const needle = search.value.trim().toLocaleLowerCase()
-  return props.posts.filter((post) => {
-    if (status.value !== 'all' && post.status !== status.value) return false
-    if (tagId.value && !post.tagIds.includes(tagId.value)) return false
-    return !needle
-      || post.title.toLocaleLowerCase().includes(needle)
-      || post.slug.toLocaleLowerCase().includes(needle)
-  })
-})
-const allVisibleSelected = computed(() => filteredPosts.value.length > 0 && filteredPosts.value.every((post) => selectedSet.value.has(post.id)))
+// The server already applied search/status/tag/offset/limit; the table renders the page as-is.
+const pagePosts = computed(() => props.posts)
+const allVisibleSelected = computed(() => pagePosts.value.length > 0 && pagePosts.value.every((post) => selectedSet.value.has(post.id)))
 const selectedPosts = computed(() => props.posts.filter((post) => selectedSet.value.has(post.id)))
 const selectedDraftIds = computed(() => selectedPosts.value.filter((post) => post.status === 'draft').map((post) => post.id))
 const selectedFeatureableIds = computed(() => selectedPosts.value.filter((post) => post.type === 'article' && post.status === 'published' && !post.featured).map((post) => post.id))
 const selectedFeaturedIds = computed(() => selectedPosts.value.filter((post) => post.type === 'article' && post.status === 'published' && post.featured).map((post) => post.id))
 const taxonomyBatchAllowed = computed(() => selectedPosts.value.length > 0 && selectedPosts.value.every((post) => post.type === 'article'))
 const batchDisabled = computed(() => props.pendingIds.length > 0)
+const hasPrevious = computed(() => props.offset > 0)
+const hasNext = computed(() => props.offset + props.limit < props.total)
+const rangeStart = computed(() => props.total === 0 ? 0 : Math.min(props.offset + 1, props.total))
+const rangeEnd = computed(() => Math.min(props.offset + props.limit, props.total))
+const showPagination = computed(() => props.total > props.limit)
+const emptyBecauseFilter = computed(() =>
+  props.total === 0
+  && (props.search.trim().length > 0 || props.status !== 'all' || props.tagId.length > 0)
+)
 
 function toggleVisible(selected: boolean) {
-  selectedIds.value = selected ? filteredPosts.value.slice(0, 20).map((post) => post.id) : []
+  selectedIds.value = selected ? pagePosts.value.slice(0, 20).map((post) => post.id) : []
+}
+
+function commitSearch() {
+  emit('update:search', searchDraft.value)
 }
 
 watch(() => props.posts, (posts) => {
@@ -119,19 +147,32 @@ watch(() => props.posts, (posts) => {
   selectedIds.value = selectedIds.value.filter((id) => existing.has(id))
 }, { immediate: true })
 
-watch([search, status, tagId], () => { selectedIds.value = [] })
+watch([() => props.search, () => props.status, () => props.tagId, () => props.offset], () => {
+  selectedIds.value = []
+})
 </script>
 
 <template>
   <div class="post-list">
-    <div v-if="posts.length" class="post-list__filters">
+    <div class="post-list__filters">
       <label class="post-list__filter post-list__filter--search">
         <span>{{ t('posts.search') }}</span>
-        <input v-model="search" type="search" :placeholder="t('posts.searchPlaceholder')" />
+        <input
+          v-model="searchDraft"
+          type="search"
+          :placeholder="t('posts.searchPlaceholder')"
+          data-test="post-search"
+          @change="commitSearch"
+          @keyup.enter="commitSearch"
+        />
       </label>
       <label class="post-list__filter">
         <span>{{ t('table.status') }}</span>
-        <select v-model="status">
+        <select
+          :value="status"
+          data-test="post-status-filter"
+          @change="emit('update:status', ($event.target as HTMLSelectElement).value as 'all' | AdminPostStatus)"
+        >
           <option value="all">{{ t('posts.allStatuses') }}</option>
           <option value="draft">{{ t('editor.draft') }}</option>
           <option value="published">{{ t('editor.published') }}</option>
@@ -139,15 +180,19 @@ watch([search, status, tagId], () => { selectedIds.value = [] })
       </label>
       <label class="post-list__filter">
         <span>{{ t('admin.tags') }}</span>
-        <select v-model="tagId">
+        <select
+          :value="tagId"
+          data-test="post-tag-filter"
+          @change="emit('update:tagId', ($event.target as HTMLSelectElement).value)"
+        >
           <option value="">{{ t('posts.allTags') }}</option>
           <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
         </select>
       </label>
     </div>
 
-    <p v-if="posts.length === 0" class="post-list__empty">{{ t('posts.empty') }}</p>
-    <p v-else-if="filteredPosts.length === 0" class="post-list__empty">{{ t('posts.noMatches') }}</p>
+    <p v-if="posts.length === 0 && emptyBecauseFilter" class="post-list__empty">{{ t('posts.noMatches') }}</p>
+    <p v-else-if="posts.length === 0" class="post-list__empty">{{ t('posts.empty') }}</p>
     <template v-else>
     <div class="post-list__bulk" data-test="post-bulk-toolbar">
       <div class="post-list__bulk-summary">
@@ -197,7 +242,7 @@ watch([search, status, tagId], () => { selectedIds.value = [] })
         </tr>
       </thead>
       <tbody>
-        <tr v-for="post in filteredPosts" :key="post.id">
+        <tr v-for="post in pagePosts" :key="post.id">
           <td class="post-list__select"><input type="checkbox" :checked="selectedSet.has(post.id)" :disabled="pendingSet.has(post.id)" :aria-label="t('posts.selectPost', { title: post.title })" :data-test="`select-${post.id}`" @change="toggleSelection(post.id, checked($event))"></td>
           <td>
             <span class="post-list__title-line">
@@ -243,6 +288,13 @@ watch([search, status, tagId], () => { selectedIds.value = [] })
         </tr>
       </tbody>
     </table>
+    <div v-if="showPagination" class="post-list__pagination" :aria-label="t('posts.pages')" data-test="post-pagination">
+      <p class="post-list__range">{{ t('posts.range', { start: rangeStart, end: rangeEnd, total }) }}</p>
+      <div class="post-list__page-actions">
+        <button type="button" data-test="post-page-prev" :disabled="batchDisabled || !hasPrevious" @click="emit('prev')">{{ t('posts.previous') }}</button>
+        <button type="button" data-test="post-page-next" :disabled="batchDisabled || !hasNext" @click="emit('next')">{{ t('posts.next') }}</button>
+      </div>
+    </div>
     </template>
   </div>
 </template>
@@ -287,6 +339,11 @@ watch([search, status, tagId], () => { selectedIds.value = [] })
 .post-list__menu-footer button { padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-page); color: var(--color-text); font: inherit; font-weight: 700; }
 .post-list__menu-footer button.is-primary { background: var(--color-accent); color: white; }
 .post-list__empty { color: var(--color-muted); }
+.post-list__pagination { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 4px; }
+.post-list__range { margin: 0; color: var(--color-muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.post-list__page-actions { display: flex; gap: 7px; }
+.post-list__page-actions button { min-height: 34px; padding: 6px 11px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-page); color: var(--color-text); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.post-list__page-actions button:disabled { opacity: .45; cursor: default; }
 button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 @media (max-width: 900px) { .post-list { overflow-x: auto; } .post-list__table { min-width: 980px; } .post-list__bulk-group { border-inline-start: 0; padding-inline-start: 0; } }
 </style>
