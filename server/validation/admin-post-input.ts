@@ -81,6 +81,8 @@ export const previewInputSchema = z.object({
 
 export const postIdParamSchema = z.string().trim().min(1)
 
+export const postSlugParamSchema = z.string().trim().min(1).max(200)
+
 export type CreatePostInputDto = z.infer<typeof createPostInputSchema>
 export type UpdatePostInputDto = z.infer<typeof updatePostInputSchema>
 export type PreviewInputDto = z.infer<typeof previewInputSchema>

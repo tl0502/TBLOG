@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef } from 'vue'
 import PostListTable from '~/components/admin/PostListTable.vue'
-import { apiErrorMessage, deletePost, updatePost, useAdminIntegrations, useAdminPosts, useAdminTaxonomyOptions, type UpdatePostBody } from '~/composables/useAdminApi'
+import { apiErrorMessage, deletePost, updatePost, useLazyAdminIntegrations, useAdminPosts, useAdminTaxonomyOptions, type UpdatePostBody } from '~/composables/useAdminApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
 
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const postsRequest = useAdminPosts()
 const taxonomyRequest = useAdminTaxonomyOptions()
-const integrationsRequest = useAdminIntegrations()
+// The search-sync warning is non-critical, so its integration read is created lazily now but only
+// executed client-side after mount — it never blocks the posts list's first paint.
+const { data: integrationData, refresh: refreshIntegrations } = useLazyAdminIntegrations()
 const [
   { data, error, pending, refresh },
-  { data: taxonomyData },
-  { data: integrationData, refresh: refreshIntegrations }
-] = await Promise.all([postsRequest, taxonomyRequest, integrationsRequest])
+  { data: taxonomyData }
+] = await Promise.all([postsRequest, taxonomyRequest])
 const errorMessage = shallowRef('')
 const noticeMessage = shallowRef('')
 const pendingIds = shallowRef<string[]>([])
@@ -27,6 +28,9 @@ const searchSyncError = computed(() => integrationData.value?.data.find((item) =
 async function refreshIntegrationStatus() {
   try { await refreshIntegrations() } catch { /* the saved post state remains authoritative */ }
 }
+
+// Load the client-only integration status once the shell is mounted, off the critical render path.
+onMounted(() => { void refreshIntegrationStatus() })
 
 async function processQueue() {
   if (processingQueue.value) return

@@ -660,6 +660,18 @@ export function useAdminIntegrations() {
   })
 }
 
+/**
+ * Non-critical integration read for the posts view's search-sync warning. It never blocks first
+ * paint: the fetch stays deferred (client-only) until the page explicitly executes it after mount.
+ */
+export function useLazyAdminIntegrations() {
+  return useLazyFetch<Envelope<IntegrationView[], { total: number }>>('/api/v1/admin/integrations', {
+    key: 'admin-integrations',
+    server: false,
+    immediate: false
+  })
+}
+
 export function updateIntegration(
   capability: string,
   provider: string,

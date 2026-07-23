@@ -1,0 +1,23 @@
+import { getRouterParam, setResponseStatus } from 'h3'
+import { ZodError } from 'zod'
+import { adminPostError } from '../../../../../domain/admin-post-errors'
+import { createAdminPostServiceForEvent } from '../../../../../services/admin-post-service-factory'
+import { errorResponse, ok } from '../../../../../utils/api-response'
+import { requireAdmin } from '../../../../../utils/require-admin'
+import { postSlugParamSchema } from '../../../../../validation/admin-post-input'
+
+export default defineEventHandler(async (event) => {
+  try {
+    await requireAdmin(event)
+    const slug = postSlugParamSchema.parse(getRouterParam(event, 'slug'))
+    // A missing post is a valid state for singleton pages like About, returned as `data: null`.
+    const post = await createAdminPostServiceForEvent(event).getForEditBySlug(slug)
+
+    return ok(post)
+  } catch (error) {
+    const mapped = error instanceof ZodError ? adminPostError('not_found', 'Post not found', 404) : error
+    const response = errorResponse(event, mapped)
+    setResponseStatus(event, response.statusCode)
+    return response.body
+  }
+})

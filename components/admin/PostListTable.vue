@@ -39,8 +39,25 @@ function checked(event: Event): boolean {
   return (event.target as HTMLInputElement).checked
 }
 
-function closeMenu(event: Event) {
-  (event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
+type MenuKind = 'category' | 'tags'
+const openMenus = reactive(new Set<string>())
+const menuKey = (id: string, kind: MenuKind) => `${id}:${kind}`
+
+function isMenuOpen(id: string, kind: MenuKind) {
+  return openMenus.has(menuKey(id, kind))
+}
+
+// A row menu opens only on demand; its panel (every category/tag) stays out of the DOM until then,
+// so the table renders O(rows) controls instead of O(rows × (categories + tags)) hidden nodes.
+function toggleMenu(post: AdminPostListItemView, kind: MenuKind) {
+  if (post.type !== 'article' || pendingSet.value.has(post.id)) return
+  const key = menuKey(post.id, kind)
+  if (openMenus.has(key)) openMenus.delete(key)
+  else openMenus.add(key)
+}
+
+function closeMenu(id: string, kind: MenuKind) {
+  openMenus.delete(menuKey(id, kind))
 }
 
 function categoryName(post: AdminPostListItemView) {
@@ -58,11 +75,11 @@ function resetTagDraft(post: AdminPostListItemView) {
   tagDrafts[post.id] = [...post.tagIds]
 }
 
-function applyTagDraft(post: AdminPostListItemView, event: Event) {
+function applyTagDraft(post: AdminPostListItemView) {
   const nextTags = [...(tagDrafts[post.id] ?? post.tagIds)]
   emit('tags', { id: post.id, tagIds: nextTags })
   tagDrafts[post.id] = [...post.tagIds]
-  closeMenu(event)
+  closeMenu(post.id, 'tags')
 }
 
 function toggleSelection(id: string, selected: boolean) {
@@ -198,22 +215,22 @@ watch([search, status, tagId], () => { selectedIds.value = [] })
           <td>{{ formatDate(post.updatedAt) }}</td>
           <td>
             <div class="post-list__actions">
-              <details class="post-list__menu" :class="{ 'is-disabled': post.type !== 'article' || pendingSet.has(post.id) }">
-                <summary class="post-list__menu-button" :aria-disabled="post.type !== 'article' || pendingSet.has(post.id)" :data-test="`category-${post.id}`" @click="(post.type !== 'article' || pendingSet.has(post.id)) && $event.preventDefault()">{{ categoryName(post) }}</summary>
-                <div v-if="post.type === 'article'" class="post-list__menu-panel post-list__menu-panel--category">
-                  <button v-for="category in categories" :key="category.id" type="button" :class="{ 'is-active': category.id === post.categoryId }" :disabled="pendingSet.has(post.id)" :data-test="`category-${post.id}-${category.id}`" @click="emit('category', { id: post.id, categoryId: category.id }); closeMenu($event)">{{ category.name }}</button>
+              <details class="post-list__menu" :open="isMenuOpen(post.id, 'category')" :class="{ 'is-disabled': post.type !== 'article' || pendingSet.has(post.id) }">
+                <summary class="post-list__menu-button" :aria-disabled="post.type !== 'article' || pendingSet.has(post.id)" :data-test="`category-${post.id}`" @click.prevent="toggleMenu(post, 'category')">{{ categoryName(post) }}</summary>
+                <div v-if="post.type === 'article' && isMenuOpen(post.id, 'category')" class="post-list__menu-panel post-list__menu-panel--category">
+                  <button v-for="category in categories" :key="category.id" type="button" :class="{ 'is-active': category.id === post.categoryId }" :disabled="pendingSet.has(post.id)" :data-test="`category-${post.id}-${category.id}`" @click="emit('category', { id: post.id, categoryId: category.id }); closeMenu(post.id, 'category')">{{ category.name }}</button>
                 </div>
               </details>
-              <details class="post-list__menu" :class="{ 'is-disabled': post.type !== 'article' || pendingSet.has(post.id) }">
-                <summary class="post-list__menu-button" :aria-disabled="post.type !== 'article' || pendingSet.has(post.id)" :data-test="`tags-${post.id}`" @click="(post.type !== 'article' || pendingSet.has(post.id)) && $event.preventDefault()">{{ t('editor.tags') }} <span class="post-list__count">{{ post.tagIds.length }}</span></summary>
-                <div v-if="post.type === 'article'" class="post-list__menu-panel post-list__menu-panel--tags">
+              <details class="post-list__menu" :open="isMenuOpen(post.id, 'tags')" :class="{ 'is-disabled': post.type !== 'article' || pendingSet.has(post.id) }">
+                <summary class="post-list__menu-button" :aria-disabled="post.type !== 'article' || pendingSet.has(post.id)" :data-test="`tags-${post.id}`" @click.prevent="toggleMenu(post, 'tags')">{{ t('editor.tags') }} <span class="post-list__count">{{ post.tagIds.length }}</span></summary>
+                <div v-if="post.type === 'article' && isMenuOpen(post.id, 'tags')" class="post-list__menu-panel post-list__menu-panel--tags">
                   <label v-for="tag in tags" :key="tag.id">
                     <input type="checkbox" :checked="(tagDrafts[post.id] ?? post.tagIds).includes(tag.id)" :disabled="pendingSet.has(post.id)" :data-test="`tag-${post.id}-${tag.id}`" @change="toggleDraftTag(post, tag.id, checked($event))">
                     <span>{{ tag.name }}</span>
                   </label>
                   <div class="post-list__menu-footer">
-                    <button type="button" :disabled="pendingSet.has(post.id)" @click="resetTagDraft(post); closeMenu($event)">{{ t('common.cancel') }}</button>
-                    <button type="button" class="is-primary" :disabled="pendingSet.has(post.id)" :data-test="`save-tags-${post.id}`" @click="applyTagDraft(post, $event)">{{ t('common.save') }}</button>
+                    <button type="button" :disabled="pendingSet.has(post.id)" @click="resetTagDraft(post); closeMenu(post.id, 'tags')">{{ t('common.cancel') }}</button>
+                    <button type="button" class="is-primary" :disabled="pendingSet.has(post.id)" :data-test="`save-tags-${post.id}`" @click="applyTagDraft(post)">{{ t('common.save') }}</button>
                   </div>
                 </div>
               </details>

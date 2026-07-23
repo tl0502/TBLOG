@@ -5,7 +5,7 @@ const api = vi.hoisted(() => ({
   apiErrorMessage: vi.fn((_error: unknown, fallback: string) => fallback),
   deletePost: vi.fn(),
   updatePost: vi.fn(),
-  useAdminIntegrations: vi.fn(),
+  useLazyAdminIntegrations: vi.fn(),
   useAdminPosts: vi.fn(),
   useAdminTaxonomyOptions: vi.fn()
 }))
@@ -75,7 +75,7 @@ describe('admin posts page', () => {
     api.useAdminTaxonomyOptions.mockResolvedValue({
       data: shallowRef({ data: { categories: [], tags: [] }, meta: {} })
     })
-    api.useAdminIntegrations.mockResolvedValue({
+    api.useLazyAdminIntegrations.mockReturnValue({
       data: shallowRef({ data: [], meta: {} }),
       refresh: vi.fn()
     })
@@ -90,7 +90,7 @@ describe('admin posts page', () => {
     expect(wrapper.get('[data-test="post-count"]').text()).toBe('1')
   })
 
-  it('starts taxonomy and integration reads before the posts read resolves', async () => {
+  it('creates the taxonomy and deferred integration reads before the posts read resolves', async () => {
     const postsResult = {
       data: shallowRef({ data: [], meta: {} }),
       error: shallowRef(null),
@@ -103,7 +103,7 @@ describe('admin posts page', () => {
     const wrapper = await mountPageWithoutWaiting()
 
     expect(api.useAdminTaxonomyOptions).toHaveBeenCalledOnce()
-    expect(api.useAdminIntegrations).toHaveBeenCalledOnce()
+    expect(api.useLazyAdminIntegrations).toHaveBeenCalledOnce()
 
     pendingPosts.resolve(postsResult)
     await flushPromises()
@@ -143,7 +143,7 @@ describe('admin posts page', () => {
   })
 
   it('does not report a successful delete as failed when integration refresh rejects', async () => {
-    api.useAdminIntegrations.mockResolvedValueOnce({ data: shallowRef({ data: [], meta: {} }), refresh: vi.fn().mockRejectedValue(new Error('refresh failed')) })
+    api.useLazyAdminIntegrations.mockReturnValueOnce({ data: shallowRef({ data: [], meta: {} }), refresh: vi.fn().mockRejectedValue(new Error('refresh failed')) })
     api.deletePost.mockResolvedValueOnce({ data: { id: 'post-1' }, meta: {} })
     const wrapper = await mountPage()
 

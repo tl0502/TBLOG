@@ -288,6 +288,20 @@ describe('admin post service', () => {
     expect(repo.calls.create[0]).toMatchObject({ categoryId: UNCATEGORIZED_CATEGORY_ID })
   })
 
+  it('loads a post for editing by its unique slug', async () => {
+    const { service } = build([editFixture({ id: 'about-id', slug: 'about', type: 'page', title: 'About' })])
+
+    const post = await service.getForEditBySlug('about')
+
+    expect(post).toMatchObject({ id: 'about-id', slug: 'about', title: 'About' })
+  })
+
+  it('returns null from getForEditBySlug when no post has the requested slug', async () => {
+    const { service } = build([editFixture({ id: 'p1', slug: 'hello' })])
+
+    expect(await service.getForEditBySlug('about')).toBeNull()
+  })
+
   it('resets an explicitly cleared category to uncategorized on update', async () => {
     const { service, repo } = build([editFixture({ id: 'p1', categoryId: 'cat1' })])
 

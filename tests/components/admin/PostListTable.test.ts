@@ -96,7 +96,12 @@ describe('PostListTable', () => {
 
     await wrapper.get('[data-test="publish-post-1"]').trigger('click')
     await wrapper.get('[data-test="publish-post-2"]').trigger('click')
+
+    // Row menus keep their panel out of the DOM until opened, so disclose before touching controls.
+    await wrapper.get('[data-test="category-post-1"]').trigger('click')
     await wrapper.get('[data-test="category-post-1-category-2"]').trigger('click')
+
+    await wrapper.get('[data-test="tags-post-1"]').trigger('click')
     await wrapper.get('[data-test="tag-post-1-tag-vue"]').setValue(false)
     await wrapper.get('[data-test="save-tags-post-1"]').trigger('click')
 
@@ -104,6 +109,8 @@ describe('PostListTable', () => {
     expect(wrapper.emitted('unpublish')).toEqual([['post-2']])
     expect(wrapper.emitted('category')).toEqual([[{ id: 'post-1', categoryId: 'category-2' }]])
     expect(wrapper.emitted('tags')).toEqual([[{ id: 'post-1', tagIds: [] }]])
+    // Saving closes the menu and resets the draft; reopening shows the tag re-checked from props.
+    await wrapper.get('[data-test="tags-post-1"]').trigger('click')
     expect((wrapper.get('[data-test="tag-post-1-tag-vue"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.get('[data-test="category-post-2"]').attributes('aria-disabled')).toBe('true')
     expect(wrapper.find('[data-test="tag-post-2-tag-vue"]').exists()).toBe(false)

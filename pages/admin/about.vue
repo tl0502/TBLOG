@@ -12,7 +12,6 @@ import {
   previewMarkdown as renderAdminPreview,
   updatePost,
   type AdminPostEditView,
-  type AdminPostListItemView,
   type AdminPostStatus,
   type UpdatePostBody
 } from '~/composables/useAdminApi'
@@ -32,13 +31,9 @@ interface AboutPostLoadResult {
 
 const { data, error } = await useAsyncData<AboutPostLoadResult>('admin-about-post', async () => {
   const requestFetch = useRequestFetch()
-  const posts = await requestFetch<Envelope<AdminPostListItemView[]>>('/api/v1/admin/posts')
-  const about = posts.data.find((post) => post.type === 'page' && post.slug === 'about')
-  if (!about) {
-    return { post: null }
-  }
-  const response = await requestFetch<Envelope<AdminPostEditView>>(`/api/v1/admin/posts/${about.id}`)
-  return { post: response.data }
+  // Resolve the About page directly by slug instead of listing every post and filtering client-side.
+  const response = await requestFetch<Envelope<AdminPostEditView | null>>('/api/v1/admin/posts/by-slug/about')
+  return { post: response.data ?? null }
 })
 
 const aboutPost = computed(() => data.value?.post ?? null)

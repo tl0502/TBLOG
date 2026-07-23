@@ -228,6 +228,13 @@ export function createAdminPostService(dependencies: AdminPostServiceDependencie
       return requirePost(id)
     },
 
+    // Resolve a post for editing by its (unique) slug. Returns null instead of throwing because a
+    // singleton page like About may legitimately not exist yet — the caller renders a blank editor.
+    async getForEditBySlug(slug: string): Promise<AdminPostEdit | null> {
+      const found = await adminPostRepository.findBySlug(slug)
+      return found ? adminPostRepository.findForEdit(found.id) : null
+    },
+
     previewMarkdown(markdown: string) {
       return contentProcessingService.previewMarkdown(markdown)
     },

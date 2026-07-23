@@ -42,7 +42,7 @@ describe('admin About page', () => {
     vi.clearAllMocks()
     asyncResult = undefined
     vi.stubGlobal('definePageMeta', vi.fn())
-    vi.stubGlobal('useRequestFetch', () => vi.fn().mockResolvedValue({ data: [], meta: {} }))
+    vi.stubGlobal('useRequestFetch', () => vi.fn().mockResolvedValue({ data: null, meta: {} }))
     vi.stubGlobal('useAsyncData', vi.fn(async (_key: string, handler: () => Promise<unknown>) => {
       asyncResult = await handler()
       if (asyncResult == null) nullResultWarning()
