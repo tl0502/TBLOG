@@ -79,12 +79,27 @@ describe('HTTP OpenAI-compatible comment moderation integration registration', (
     expect(httpCommentModerationRegistration.validate(config)).toContain('chat/completions')
   })
 
-  it('rejects missing model for OpenAI-compatible moderation', () => {
+  it('allows saving endpoint without a model so Detect Models can run first', () => {
+    const config = httpCommentModerationRegistration.configSchema.parse({
+      endpoint: 'https://llm.example.com/v1/chat/completions',
+      timeoutMs: '5000'
+    }) as Record<string, unknown>
+
+    expect(config.model).toBeNull()
+    expect(httpCommentModerationRegistration.validate(config)).toBeNull()
+  })
+
+  it('still requires a model before checkStatus can become active', async () => {
     const config = {
       endpoint: 'https://llm.example.com/v1/chat/completions',
-      model: '   '
+      model: null
     }
-    expect(httpCommentModerationRegistration.validate(config)).toContain('Model is required')
+    await expect(httpCommentModerationRegistration.checkStatus(config, {
+      COMMENT_MODERATION_API_KEY: 'secret'
+    })).resolves.toEqual({
+      status: 'misconfigured',
+      error: 'Model is required'
+    })
   })
 
   it('reports secret readiness and probes chat completions before becoming active', async () => {
@@ -110,10 +125,10 @@ describe('HTTP OpenAI-compatible comment moderation integration registration', (
     expect(body.messages[0].role).toBe('system')
   })
 
-  it('lists models from the derived OpenAI-compatible /v1/models endpoint', async () => {
+  it('lists models from the derived OpenAI-compatible /v1/models endpoint without a model id', async () => {
     const config = {
       endpoint: 'https://llm.example.com/v1/chat/completions',
-      model: 'safe-model',
+      model: null,
       availableModels: [] as string[]
     }
     const fetchMock = vi.fn().mockResolvedValue(modelsResponse(['zeta-model', 'alpha-model']))

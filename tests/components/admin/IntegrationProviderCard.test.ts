@@ -131,7 +131,7 @@ describe('IntegrationProviderCard', () => {
 
     await wrapper.get('[data-test="integration-action-test"]').trigger('click')
 
-    expect(wrapper.emitted('action')).toEqual([['test']])
+    expect(wrapper.emitted('action')).toEqual([['test', {}]])
   })
 
   it('generates a self-hosted Secret entirely in the browser and excludes credentials from saves', async () => {

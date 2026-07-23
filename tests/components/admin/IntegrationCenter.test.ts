@@ -156,7 +156,10 @@ describe('IntegrationCenter', () => {
     await flushPromises()
 
     expect(api.runIntegrationAction).toHaveBeenCalledWith(
-      'commentProtection', 'turnstile', 'test'
+      'commentProtection',
+      'turnstile',
+      'test',
+      { config: {} }
     )
     expect(wrapper.get('[data-test="integration-status"]').text()).toBe('运行中')
     expect(wrapper.find('[data-test="integration-last-checked"]').exists()).toBe(true)

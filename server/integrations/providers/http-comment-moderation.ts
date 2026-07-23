@@ -7,11 +7,16 @@ import {
 import type { FormFieldMeta, IntegrationEnvironment, ProviderRegistration } from '../registry'
 
 const modelIdSchema = z.string().trim().min(1).max(200)
+/** Model may be omitted until Detect Models / manual entry; enable path still requires it via formMeta. */
+const optionalModelIdSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  modelIdSchema.nullable().optional().default(null)
+)
 
 const configSchema = z
   .object({
     endpoint: z.string().trim().url().max(2048),
-    model: modelIdSchema,
+    model: optionalModelIdSchema,
     timeoutMs: z.coerce.number().int().min(1_000).max(15_000).optional().default(5_000),
     /** Server-managed catalog filled by the listModels action; not edited as a free-form form field. */
     availableModels: z.array(modelIdSchema).max(200).optional().default([])
@@ -101,7 +106,8 @@ function resolveFormMeta(config: Record<string, unknown>): FormFieldMeta[] {
       placeholder: options.length > 0 ? 'Select or type a model id' : 'gpt-4o-mini',
       help: options.length > 0
         ? 'Pick a detected model from the suggestions menu, or type any model id the gateway accepts.'
-        : 'Type a model id, or save the endpoint and run Detect Models to load a suggestion menu.',
+        : 'Optional until enable: enter a model id, or fill the endpoint and run Detect Models (uses the form draft).',
+      // Required only when enabling; empty model is allowed so endpoint can be saved first.
       required: true,
       options: options.length > 0 ? options : undefined
     },
@@ -139,12 +145,8 @@ export const httpCommentModerationRegistration: ProviderRegistration = {
   configSchema,
   serverManagedConfigKeys: ['availableModels'],
   validate(config) {
-    const endpointError = validateChatCompletionsEndpoint(config.endpoint)
-    if (endpointError) return endpointError
-    if (typeof config.model !== 'string' || !config.model.trim()) {
-      return 'Model is required for OpenAI-compatible moderation'
-    }
-    return null
+    // Model is optional for save / Detect Models; enable still requires it via formMeta.required.
+    return validateChatCompletionsEndpoint(config.endpoint)
   },
   resolveFormMeta(config) {
     return resolveFormMeta(config)

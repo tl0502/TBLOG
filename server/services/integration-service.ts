@@ -248,9 +248,12 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
         config = registration.configSchema.parse(command.config) as Record<string, unknown>
       } catch (error) {
         if (error instanceof ZodError) {
-          throw integrationError('invalid_config', 'Invalid provider configuration', 422, {
-            issues: error.issues
-          })
+          throw integrationError(
+            'invalid_config',
+            error.issues[0]?.message ?? 'Invalid provider configuration',
+            422,
+            { issues: error.issues }
+          )
         }
         throw error
       }
@@ -390,7 +393,9 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
       capability: string,
       providerKey: string,
       actionKey: string,
-      permissions: readonly Permission[]
+      permissions: readonly Permission[],
+      /** Optional unsaved form draft; merged over stored public config for actions like listModels. */
+      draftConfig?: Record<string, unknown>
     ): Promise<IntegrationView> {
       requireIntegrationPermission(permissions)
       const registration = requireRegistration(capability, providerKey)
@@ -404,7 +409,11 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
         registration.capability,
         registration.providerKey
       )
-      const parsed = parseStoredProviderConfig(registration, row?.publicConfigJson ?? null)
+      const storedRaw = parseStoredConfig(row?.publicConfigJson ?? null)
+      const mergedRaw = draftConfig && Object.keys(draftConfig).length > 0
+        ? { ...storedRaw, ...draftConfig }
+        : storedRaw
+      const parsed = parseProviderConfig(registration, mergedRaw)
       let config = parsed.config
       const timestamp = now()
 

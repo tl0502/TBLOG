@@ -10,4 +10,14 @@ export const updateIntegrationInputSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({})
 })
 
+/** Optional body for integration actions (e.g. Detect Models with unsaved form draft). */
+export const integrationActionInputSchema = z
+  .object({
+    config: z.record(z.string(), z.unknown()).optional()
+  })
+  .strip()
+  .optional()
+  .default({})
+
 export type UpdateIntegrationInput = z.infer<typeof updateIntegrationInputSchema>
+export type IntegrationActionInput = z.infer<typeof integrationActionInputSchema>

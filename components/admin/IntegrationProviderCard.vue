@@ -21,7 +21,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), { busy: false, error: '' })
 const emit = defineEmits<{
   save: [payload: IntegrationSavePayload]
-  action: [actionKey: string]
+  /** actionKey plus the current form draft so server actions (e.g. listModels) need not rely on a prior save. */
+  action: [actionKey: string, draftConfig: Record<string, unknown>]
 }>()
 const { formatDate, t } = useTblogI18n()
 
@@ -95,7 +96,7 @@ function visible(condition?: { key: string; value: string }): boolean {
 
 async function runAction(action: IntegrationView['actions'][number]) {
   if (action.kind !== 'client') {
-    emit('action', action.key)
+    emit('action', action.key, currentConfig())
     return
   }
   if (action.clientHandler !== 'umamiSelfHostedCredential') return

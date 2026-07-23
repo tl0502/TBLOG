@@ -117,10 +117,10 @@ function onSave(view: IntegrationView, payload: IntegrationSavePayload) {
   )
 }
 
-function onAction(view: IntegrationView, actionKey: string) {
+function onAction(view: IntegrationView, actionKey: string, draftConfig: Record<string, unknown> = {}) {
   void runOperation(
     view,
-    () => runIntegrationAction(view.capability, view.providerKey, actionKey),
+    () => runIntegrationAction(view.capability, view.providerKey, actionKey, { config: draftConfig }),
     t('integrations.actionError')
   )
 }
@@ -164,7 +164,7 @@ function onAction(view: IntegrationView, actionKey: string) {
             :busy="busyId === providerId(provider)"
             :error="opErrors[providerId(provider)] ?? ''"
             @save="onSave(provider, $event)"
-            @action="(actionKey) => onAction(provider, actionKey)"
+            @action="(actionKey, draftConfig) => onAction(provider, actionKey, draftConfig)"
           />
         </div>
       </section>

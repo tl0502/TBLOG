@@ -708,10 +708,15 @@ export function updateIntegration(
   )
 }
 
-export function runIntegrationAction(capability: string, provider: string, action: string) {
+export function runIntegrationAction(
+  capability: string,
+  provider: string,
+  action: string,
+  body?: { config?: Record<string, unknown> }
+) {
   return $fetch<Envelope<IntegrationView>>(
     `/api/v1/admin/integrations/${capability}/${provider}/actions/${action}`,
-    { method: 'POST' }
+    { method: 'POST', body: body ?? {} }
   )
 }
 
