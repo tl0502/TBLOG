@@ -96,10 +96,14 @@ export interface AdminAnalyticsReportStatusView {
   due: boolean
 }
 
+/**
+ * Analytics report status is shown only in the Settings → Analytics tab, so this read stays deferred
+ * (client-only, not immediate); the caller executes it when that tab is first opened.
+ */
 export function useAdminAnalyticsReportStatus() {
-  return useFetch<Envelope<AdminAnalyticsReportStatusView>>(
+  return useLazyFetch<Envelope<AdminAnalyticsReportStatusView>>(
     '/api/v1/admin/analytics/reports/status',
-    { key: 'admin-analytics-report-status' }
+    { key: 'admin-analytics-report-status', server: false, immediate: false }
   )
 }
 

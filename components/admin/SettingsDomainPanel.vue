@@ -53,16 +53,21 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await fetchSettingsDomain(props.domain)
-    form.value = structuredClone(response.data) as SettingsByDomain[SettingsDomain]
     if (props.domain === 'seo') {
-      try {
-        const site = await fetchSettingsDomain('site')
+      // Load the SEO config and its auxiliary Site display data concurrently instead of in series.
+      // The Site read is tolerant: the SEO form stays usable with safe fallbacks if it fails.
+      const [response, site] = await Promise.all([
+        fetchSettingsDomain('seo'),
+        fetchSettingsDomain('site').catch(() => null)
+      ])
+      form.value = structuredClone(response.data) as SettingsByDomain[SettingsDomain]
+      if (site) {
         seoSiteName.value = site.data.siteName
         seoSiteDescription.value = site.data.description
-      } catch {
-        // The SEO form remains usable with safe display fallbacks if the auxiliary Site read fails.
       }
+    } else {
+      const response = await fetchSettingsDomain(props.domain)
+      form.value = structuredClone(response.data) as SettingsByDomain[SettingsDomain]
     }
   } catch (error) {
     loadError.value = apiErrorMessage(error, t('settings.loadError'))

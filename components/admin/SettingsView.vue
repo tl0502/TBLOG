@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { computed, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, shallowRef, watch } from 'vue'
 import SettingsDomainPanel from '~/components/admin/SettingsDomainPanel.vue'
-import SettingsSecurityView from '~/components/admin/SettingsSecurityView.vue'
 import SettingsMediaForm from '~/components/admin/SettingsMediaForm.vue'
-import DatabaseUpdatePanel from '~/components/admin/DatabaseUpdatePanel.vue'
-import IntegrationCenter from '~/components/admin/IntegrationCenter.vue'
 import {
   apiErrorMessage,
   syncAdminAnalyticsReport,
@@ -16,6 +13,11 @@ import {
   type SettingsDomain
 } from '~/composables/useAdminApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
+
+// Heavy, tab-gated panels load on demand so they stay out of the settings route's initial JS chunk.
+const SettingsSecurityView = defineAsyncComponent(() => import('~/components/admin/SettingsSecurityView.vue'))
+const DatabaseUpdatePanel = defineAsyncComponent(() => import('~/components/admin/DatabaseUpdatePanel.vue'))
+const IntegrationCenter = defineAsyncComponent(() => import('~/components/admin/IntegrationCenter.vue'))
 
 interface Tab {
   key: SettingsDomain | 'analytics' | 'performance' | 'database'
@@ -38,6 +40,11 @@ const tabs = computed<Tab[]>(() => [
 
 const activeKey = shallowRef<Tab['key']>('site')
 const { data: reportData, pending: reportPending, error: reportLoadError, refresh: refreshReport } = useAdminAnalyticsReportStatus()
+// The report status only surfaces in the Analytics tab, so fetch it on first open instead of on
+// every settings load. The `!reportData.value` guard keeps it off other tabs and off the refetch path.
+watch(activeKey, (key) => {
+  if (key === 'analytics' && !reportData.value) void refreshReport()
+}, { immediate: true })
 const reportEnabled = shallowRef(false)
 const reportSchedule = shallowRef<AnalyticsReportSchedule>('off')
 const reportTimeOfDay = shallowRef('03:00')

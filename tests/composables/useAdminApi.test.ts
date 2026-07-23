@@ -85,9 +85,9 @@ describe('useAdminApi', () => {
   })
 
   it('uses the published analytics report status, settings, and sync endpoints', async () => {
-    const useFetch = vi.fn()
+    const useLazyFetch = vi.fn()
     const $fetch = vi.fn().mockResolvedValue({ data: {}, meta: {} })
-    vi.stubGlobal('useFetch', useFetch)
+    vi.stubGlobal('useLazyFetch', useLazyFetch)
     vi.stubGlobal('$fetch', $fetch)
 
     useAdminAnalyticsReportStatus()
@@ -96,8 +96,8 @@ describe('useAdminApi', () => {
     })
     await syncAdminAnalyticsReport()
 
-    expect(useFetch).toHaveBeenCalledWith('/api/v1/admin/analytics/reports/status', {
-      key: 'admin-analytics-report-status'
+    expect(useLazyFetch).toHaveBeenCalledWith('/api/v1/admin/analytics/reports/status', {
+      key: 'admin-analytics-report-status', server: false, immediate: false
     })
     expect($fetch).toHaveBeenNthCalledWith(1, '/api/v1/admin/analytics/reports/settings', {
       method: 'PUT',
