@@ -33,7 +33,8 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   typescript: {
     strict: true,
-    typeCheck: true
+    // Keep production builds free of vue-tsc. Run `pnpm typecheck` (CI / pre-push) separately.
+    typeCheck: false
   },
   runtimeConfig: {
     public: {
@@ -41,10 +42,16 @@ export default defineNuxtConfig({
     }
   },
   vite: {
-    plugins: [resolveAppManifestPlugin()]
+    plugins: [resolveAppManifestPlugin()],
+    build: {
+      // Sourcemaps are expensive on Windows + Cloudflare Worker bundles; enable only when debugging.
+      sourcemap: false,
+      reportCompressedSize: false
+    }
   },
   nitro: {
     preset: 'cloudflare_module',
+    sourceMap: false,
     experimental: {
       tasks: true
     },
