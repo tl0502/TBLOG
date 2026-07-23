@@ -1,7 +1,11 @@
 import { createApp, createSSRApp, h, nextTick, reactive, shallowRef, Suspense } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
-const api = vi.hoisted(() => ({ useHomeBootstrap: vi.fn() }))
+const api = vi.hoisted(() => ({
+  useHomeShell: vi.fn(),
+  usePostFeed: vi.fn(),
+  prefetchPostFeed: vi.fn()
+}))
 const seo = vi.hoisted(() => ({ useHomeSeo: vi.fn() }))
 
 vi.mock('~/composables/usePublicApi', () => api)
@@ -42,47 +46,83 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function emptyShell() {
+  return shallowRef({
+    data: {
+      feed: {
+        items: [],
+        meta: {
+          page: 1, pageSize: 25, total: 0, pageCount: 0,
+          sort: 'publishedAt' as const, order: 'desc' as const
+        }
+      },
+      featured: [],
+      hotspots: { current: [], historical: [] },
+      homeRail: { cards: {} },
+      tags: []
+    },
+    meta: { degraded: [], includeFeed: false }
+  })
+}
+
+function emptyFeed(meta: Record<string, unknown> = {}) {
+  return shallowRef({
+    data: [],
+    meta: {
+      page: 1,
+      pageSize: 25,
+      total: 0,
+      pageCount: 0,
+      sort: 'publishedAt',
+      order: 'desc',
+      ...meta
+    }
+  })
+}
+
 describe('public home page bootstrap boundary', () => {
   beforeEach(() => {
     route.query = {}
     navigateTo.mockReset()
-    api.useHomeBootstrap.mockReset()
+    api.useHomeShell.mockReset()
+    api.usePostFeed.mockReset()
+    api.prefetchPostFeed.mockReset()
     seo.useHomeSeo.mockReset()
   })
 
-  it('waits for one bootstrap result before rendering the homepage', async () => {
-    const request = deferred<{
+  it('waits for shell and feed before rendering the homepage', async () => {
+    const shellRequest = deferred<{
       data: ReturnType<typeof shallowRef>
       status: ReturnType<typeof shallowRef>
       error: ReturnType<typeof shallowRef>
     }>()
-    api.useHomeBootstrap.mockReturnValue(request.promise)
+    const feedRequest = deferred<{
+      data: ReturnType<typeof shallowRef>
+      status: ReturnType<typeof shallowRef>
+      error: ReturnType<typeof shallowRef>
+    }>()
+    api.useHomeShell.mockReturnValue(shellRequest.promise)
+    api.usePostFeed.mockReturnValue(feedRequest.promise)
     const page = await import('../../pages/index.vue')
     const render = renderToString(createSSRApp(page.default))
     let completed = false
     void render.then(() => { completed = true })
 
     await Promise.resolve()
-    expect(api.useHomeBootstrap).toHaveBeenCalledOnce()
+    expect(api.useHomeShell).toHaveBeenCalledOnce()
+    expect(api.usePostFeed).toHaveBeenCalledOnce()
     expect(completed).toBe(false)
 
-    request.resolve({
-      data: shallowRef({
-        data: {
-          feed: {
-            items: [],
-            meta: {
-              page: 1, pageSize: 25, total: 0, pageCount: 0,
-              sort: 'publishedAt', order: 'desc'
-            }
-          },
-          featured: [],
-          hotspots: { current: [], historical: [] },
-          homeRail: { cards: {} },
-          tags: []
-        },
-        meta: { degraded: [] }
-      }),
+    shellRequest.resolve({
+      data: emptyShell(),
+      status: shallowRef('success'),
+      error: shallowRef(null)
+    })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+
+    feedRequest.resolve({
+      data: emptyFeed(),
       status: shallowRef('success'),
       error: shallowRef(null)
     })
@@ -91,24 +131,30 @@ describe('public home page bootstrap boundary', () => {
     expect(seo.useHomeSeo).toHaveBeenCalledOnce()
   })
 
-  it('does not let stale bootstrap metadata roll a new pagination query back', async () => {
-    const bootstrap = shallowRef({
-      data: {
-        feed: {
-          items: [],
-          meta: {
-            page: 1, pageSize: 25, total: 27, pageCount: 2,
-            sort: 'publishedAt' as const, order: 'desc' as const
-          }
-        },
-        featured: [],
-        hotspots: { current: [], historical: [] },
-        homeRail: { cards: {} },
-        tags: []
-      },
-      meta: { degraded: [] }
+  it('loads feed for the active page independently of the shell', async () => {
+    route.query = { page: '3', sort: 'publishedAt', order: 'desc' }
+    api.useHomeShell.mockResolvedValue({ data: emptyShell(), error: shallowRef(null) })
+    api.usePostFeed.mockResolvedValue({ data: emptyFeed({ page: 3, total: 60, pageCount: 3 }), error: shallowRef(null) })
+    const page = await import('../../pages/index.vue')
+    const container = document.createElement('div')
+    const app = createApp({
+      setup: () => () => h(Suspense, null, { default: () => h(page.default) })
     })
-    api.useHomeBootstrap.mockResolvedValue({ data: bootstrap, error: shallowRef(null) })
+    app.mount(container)
+    await Promise.resolve()
+    await nextTick()
+
+    expect(api.useHomeShell).toHaveBeenCalledOnce()
+    const feedQueryArg = api.usePostFeed.mock.calls[0]?.[0]
+    expect(feedQueryArg?.value ?? feedQueryArg).toMatchObject({ page: 3, limit: 25 })
+
+    app.unmount()
+  })
+
+  it('does not let stale feed metadata roll a new pagination query back', async () => {
+    const feed = emptyFeed({ page: 1, total: 27, pageCount: 2 })
+    api.useHomeShell.mockResolvedValue({ data: emptyShell(), error: shallowRef(null) })
+    api.usePostFeed.mockResolvedValue({ data: feed, error: shallowRef(null) })
     const page = await import('../../pages/index.vue')
     const container = document.createElement('div')
     const app = createApp({
@@ -122,15 +168,9 @@ describe('public home page bootstrap boundary', () => {
     await nextTick()
     expect(navigateTo).not.toHaveBeenCalled()
 
-    bootstrap.value = {
-      ...bootstrap.value,
-      data: {
-        ...bootstrap.value.data,
-        feed: {
-          ...bootstrap.value.data.feed,
-          meta: { ...bootstrap.value.data.feed.meta, page: 2 }
-        }
-      }
+    feed.value = {
+      ...feed.value,
+      meta: { ...feed.value.meta, page: 2 }
     }
     await nextTick()
     expect(navigateTo).not.toHaveBeenCalled()
@@ -139,15 +179,9 @@ describe('public home page bootstrap boundary', () => {
     await nextTick()
     expect(navigateTo).not.toHaveBeenCalled()
 
-    bootstrap.value = {
-      ...bootstrap.value,
-      data: {
-        ...bootstrap.value.data,
-        feed: {
-          ...bootstrap.value.data.feed,
-          meta: { ...bootstrap.value.data.feed.meta, page: 2 }
-        }
-      }
+    feed.value = {
+      ...feed.value,
+      meta: { ...feed.value.meta, page: 2 }
     }
     await nextTick()
     expect(navigateTo).toHaveBeenCalledWith({

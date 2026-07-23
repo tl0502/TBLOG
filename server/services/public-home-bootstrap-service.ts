@@ -27,12 +27,36 @@ export interface PublicHomeBootstrapResult {
   degraded: PublicHomeBootstrapOptionalSection[]
 }
 
+export interface PublicHomeBootstrapOptions {
+  /**
+   * When false, skip the home feed D1 read. Used by the public homepage shell so the feed can
+   * load independently via `/api/v1/posts` without doubling the article-list query.
+   */
+  includeFeed?: boolean
+}
+
 export interface PublicHomeBootstrapServiceDependencies {
   getFeed: (query: PublicHomeFeedQuery) => Promise<PublicHomeFeedPage<PublicPostListItem>>
   getFeatured: () => Promise<PublicPostListItem[]>
   getHotspots: () => Promise<PublicHotspots>
   getHomeRail: () => Promise<HomeRailDynamicData>
   getTags: () => Promise<PublicTag[]>
+}
+
+function emptyFeed(query: PublicHomeFeedQuery): PublicHomeFeedPage<PublicPostListItem> {
+  return {
+    items: [],
+    page: query.page,
+    pageSize: query.limit,
+    total: 0,
+    pageCount: 0,
+    sort: query.sort,
+    order: query.order,
+    effectiveSort: query.sort,
+    statisticsAvailable: false,
+    reportRevision: null,
+    reportUpdatedAt: null
+  }
 }
 
 export function createPublicHomeBootstrapService(
@@ -51,9 +75,13 @@ export function createPublicHomeBootstrapService(
   }
 
   return {
-    async getBootstrap(query: PublicHomeFeedQuery): Promise<PublicHomeBootstrapResult> {
+    async getBootstrap(
+      query: PublicHomeFeedQuery,
+      options: PublicHomeBootstrapOptions = {}
+    ): Promise<PublicHomeBootstrapResult> {
+      const includeFeed = options.includeFeed !== false
       const [feedPage, featuredResult, hotspotsResult, homeRailResult, tagsResult] = await Promise.all([
-        dependencies.getFeed(query),
+        includeFeed ? dependencies.getFeed(query) : Promise.resolve(emptyFeed(query)),
         optional('featured', dependencies.getFeatured(), []),
         optional('hotspots', dependencies.getHotspots(), { current: [], historical: [] }),
         optional('homeRail', dependencies.getHomeRail(), { cards: {} }),

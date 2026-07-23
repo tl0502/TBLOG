@@ -64,13 +64,14 @@ const { t } = useTblogI18n()
   box-shadow: var(--shadow-card);
   text-decoration: none;
   color: var(--color-text);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  transition: box-shadow 0.16s ease, border-color 0.16s ease;
 }
 
-.taxonomy-list__card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(var(--color-accent-rgb), 0.28);
-  box-shadow: var(--shadow-card-hover);
+@media (hover: hover) and (pointer: fine) {
+  .taxonomy-list__card:hover {
+    border-color: rgba(var(--color-accent-rgb), 0.28);
+    box-shadow: var(--shadow-card-hover);
+  }
 }
 
 .taxonomy-list__top {

@@ -1,4 +1,4 @@
-import { createApp, h, nextTick, shallowRef } from 'vue'
+import { computed, createApp, h, nextTick, shallowRef } from 'vue'
 import {
   clearStaleFirstPublicResourceCache,
   publicResourceKey,
@@ -62,7 +62,10 @@ describe('stale-first public resource keys', () => {
     const container = document.createElement('div')
     const app = createApp({
       setup: () => {
-        state.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
+        state.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', {
+          key: 'example',
+          freshMs: 0
+        })
         return () => h('div')
       }
     })
@@ -77,7 +80,10 @@ describe('stale-first public resource keys', () => {
     const staleState = shallowRef<any>(null)
     const staleApp = createApp({
       setup: () => {
-        staleState.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
+        staleState.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', {
+          key: 'example',
+          freshMs: 0
+        })
         return () => h('div')
       }
     })
@@ -152,7 +158,10 @@ describe('stale-first public resource keys', () => {
     }))
     const app = createApp({
       setup: () => {
-        useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
+        useStaleFirstPublicResource<{ value: string }>('/api/v1/example', {
+          key: 'example',
+          freshMs: 0
+        })
         return () => h('div')
       }
     })
@@ -162,6 +171,29 @@ describe('stale-first public resource keys', () => {
 
     app.unmount()
     expect(requestSignal?.aborted).toBe(true)
+  })
+
+  it('skips mount revalidation while the session entry is still fresh', async () => {
+    if (!import.meta.client) return
+    const first = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
+    await first.refresh()
+
+    const request = vi.fn().mockResolvedValue({ value: 'again' })
+    vi.stubGlobal('$fetch', request)
+    const app = createApp({
+      setup: () => {
+        useStaleFirstPublicResource<{ value: string }>('/api/v1/example', {
+          key: 'example',
+          freshMs: 60_000
+        })
+        return () => h('div')
+      }
+    })
+    app.mount(document.createElement('div'))
+    await flush()
+    await flush()
+    expect(request).not.toHaveBeenCalled()
+    app.unmount()
   })
 
   it('clears cached public data when revalidation authoritatively returns not found', async () => {
@@ -175,7 +207,10 @@ describe('stale-first public resource keys', () => {
     const state = shallowRef<any>(null)
     const app = createApp({
       setup: () => {
-        state.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
+        state.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', {
+          key: 'example',
+          freshMs: 0
+        })
         return () => h('div')
       }
     })
@@ -191,4 +226,38 @@ describe('stale-first public resource keys', () => {
     const next = useStaleFirstPublicResource<{ value: string }>('/api/v1/example', { key: 'example' })
     expect(next.data.value).toBeUndefined()
   })
+
+  it('keeps previous payload while a reactive key revalidates without a session hit', async () => {
+    if (!import.meta.client) return
+    const request = vi.fn()
+      .mockResolvedValueOnce({ value: 'page-1' })
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.stubGlobal('$fetch', request)
+
+    const key = shallowRef('posts?page=1')
+    const state = shallowRef<ReturnType<typeof useStaleFirstPublicResource<{ value: string }>> | null>(null)
+    const app = createApp({
+      setup: () => {
+        state.value = useStaleFirstPublicResource<{ value: string }>('/api/v1/posts', {
+          key,
+          query: computed(() => ({ page: key.value.endsWith('2') ? 2 : 1 }))
+        })
+        return () => h('div')
+      }
+    })
+    app.mount(document.createElement('div'))
+
+    const call = asyncDataState.calls.at(-1)!
+    call.data.value = await call.handler({}, { signal: new AbortController().signal })
+    expect(state.value?.data.value).toEqual({ value: 'page-1' })
+
+    key.value = 'posts?page=2'
+    await flush()
+    // No session entry for page 2 yet — keep page 1 visible while the request is in flight.
+    expect(state.value?.data.value).toEqual({ value: 'page-1' })
+    expect(request).toHaveBeenCalledTimes(2)
+
+    app.unmount()
+  })
 })
+

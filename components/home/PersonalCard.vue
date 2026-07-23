@@ -371,11 +371,28 @@ onBeforeUnmount(() => {
   content: '';
 }
 
-.personal-card:hover,
+/* Preview-open state always highlights; hover lift only on fine pointers. */
 .personal-anchor[data-preview='true'] .personal-card {
   border-color: rgba(var(--color-accent-rgb), 0.52);
   box-shadow: var(--shadow-card-hover);
-  transform: translateY(-2px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .personal-card:hover,
+  .personal-anchor[data-preview='true'] .personal-card {
+    border-color: rgba(var(--color-accent-rgb), 0.52);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .personal-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .personal-card__hint:hover .personal-card__orb {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 4px rgba(var(--color-accent-rgb), 0.07);
+    transform: scale(1.14);
+  }
 }
 
 .personal-card__identity {
@@ -480,12 +497,6 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-12px) skewX(-18deg);
-}
-
-.personal-card__hint:hover .personal-card__orb {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px rgba(var(--color-accent-rgb), 0.07);
-  transform: scale(1.14);
 }
 
 .personal-card__orb.is-flashing-open::after {
@@ -735,6 +746,7 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .personal-card,
   .personal-card__orb,
   .personal-card__face,
   .profile-preview,
@@ -744,6 +756,7 @@ onBeforeUnmount(() => {
   .profile-layer-leave-active :deep(.profile-detail) {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
   }
 }
 </style>

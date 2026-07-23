@@ -59,13 +59,14 @@ const { t, formatNumber } = useTblogI18n()
   border-radius: var(--radius-card);
   background: var(--color-panel);
   box-shadow: var(--shadow-card);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.hotspot-stats-card:hover {
-  border-color: rgba(var(--color-accent-rgb), 0.42);
-  box-shadow: 0 22px 52px rgba(var(--color-text-rgb), 0.12);
-  transform: translateY(-4px);
+@media (hover: hover) and (pointer: fine) {
+  .hotspot-stats-card:hover {
+    border-color: rgba(var(--color-accent-rgb), 0.36);
+    box-shadow: var(--shadow-card-hover);
+  }
 }
 
 .hotspot-stats-card__head {
@@ -127,11 +128,13 @@ const { t, formatNumber } = useTblogI18n()
   color: var(--color-text);
   text-decoration: none;
   background: linear-gradient(135deg, rgba(var(--color-accent-rgb), 0.15), rgba(var(--color-accent-warm-rgb), 0.08));
-  transition: transform 0.16s ease;
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
-.hotspot-stats-card__lead:hover {
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .hotspot-stats-card__lead:hover {
+    background: linear-gradient(135deg, rgba(var(--color-accent-rgb), 0.2), rgba(var(--color-accent-warm-rgb), 0.12));
+  }
 }
 
 .hotspot-stats-card__lead > span {

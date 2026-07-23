@@ -13,20 +13,38 @@ type QueryValue = string | number | boolean | null | undefined
 type PublicResourceQuery = object
 
 const MAX_SESSION_RESPONSES = 100
-const sessionResponses = new Map<string, unknown>()
+/** Skip background revalidation when the session entry is newer than this (ms). */
+export const PUBLIC_SESSION_FRESH_MS = 45_000
+
+interface SessionEntry {
+  value: unknown
+  storedAt: number
+}
+
+const sessionResponses = new Map<string, SessionEntry>()
 const revalidatingKeys = new Set<string>()
+/** Prefetch-only dedupe — must not block mounted revalidate (which updates live UI state). */
+const prefetchingKeys = new Set<string>()
+
+function touchSessionEntry(key: string, entry: SessionEntry): void {
+  sessionResponses.delete(key)
+  sessionResponses.set(key, entry)
+}
 
 function readSessionResponse<TData>(key: string): TData | undefined {
-  if (!sessionResponses.has(key)) return undefined
-  const value = sessionResponses.get(key) as TData
-  sessionResponses.delete(key)
-  sessionResponses.set(key, value)
-  return value
+  const entry = sessionResponses.get(key)
+  if (!entry) return undefined
+  touchSessionEntry(key, entry)
+  return entry.value as TData
+}
+
+function peekSessionEntry(key: string): SessionEntry | undefined {
+  return sessionResponses.get(key)
 }
 
 function rememberSessionResponse(key: string, value: unknown): void {
   sessionResponses.delete(key)
-  sessionResponses.set(key, value)
+  sessionResponses.set(key, { value, storedAt: Date.now() })
   while (sessionResponses.size > MAX_SESSION_RESPONSES) {
     const oldest = sessionResponses.keys().next().value
     if (typeof oldest !== 'string') break
@@ -36,6 +54,12 @@ function rememberSessionResponse(key: string, value: unknown): void {
 
 function forgetSessionResponse(key: string): void {
   sessionResponses.delete(key)
+}
+
+function isSessionFresh(key: string, maxAgeMs = PUBLIC_SESSION_FRESH_MS): boolean {
+  const entry = peekSessionEntry(key)
+  if (!entry) return false
+  return Date.now() - entry.storedAt < maxAgeMs
 }
 
 function normalizedQuery(query: PublicResourceQuery): Array<[string, QueryValue]> {
@@ -54,6 +78,36 @@ export function publicResourceKey(prefix: string, query: PublicResourceQuery = {
 export function clearStaleFirstPublicResourceCache(): void {
   sessionResponses.clear()
   revalidatingKeys.clear()
+  prefetchingKeys.clear()
+}
+
+/**
+ * Warm the browser-session cache for a public resource without mounting a component.
+ * No-ops when a fresh entry already exists or a prefetch is already in flight.
+ * Uses a separate lock from mount revalidation so a warm-up never blocks UI updates.
+ */
+export async function prefetchStaleFirstPublicResource<TData>(
+  request: string,
+  options: {
+    key: string
+    query?: PublicResourceQuery
+    /** Override freshness window; default matches mount-time soft revalidation. */
+    maxAgeMs?: number
+  }
+): Promise<void> {
+  if (!import.meta.client) return
+  const maxAgeMs = options.maxAgeMs ?? PUBLIC_SESSION_FRESH_MS
+  if (isSessionFresh(options.key, maxAgeMs)) return
+  if (prefetchingKeys.has(options.key) || revalidatingKeys.has(options.key)) return
+  prefetchingKeys.add(options.key)
+  try {
+    const response = await $fetch<TData>(request, { query: options.query })
+    rememberSessionResponse(options.key, response)
+  } catch {
+    // Prefetch is best-effort; misses stay cold until the real navigation.
+  } finally {
+    prefetchingKeys.delete(options.key)
+  }
 }
 
 export function useStaleFirstPublicResource<TData>(
@@ -62,6 +116,8 @@ export function useStaleFirstPublicResource<TData>(
     key: MaybeRefOrGetter<string>
     query?: MaybeRefOrGetter<PublicResourceQuery>
     server?: boolean
+    /** Soft-revalidate age; set 0 to always revalidate after session serve. */
+    freshMs?: number
   }
 ) {
   // Dynamic public routes remount by fullPath. Capturing the key here avoids Nuxt copying the
@@ -69,6 +125,7 @@ export function useStaleFirstPublicResource<TData>(
   // callers are handled by an explicit client watcher below rather than Nuxt's reactive key copy.
   const initialKey = toValue(options.key)
   const currentKey = computed(() => toValue(options.key))
+  const freshMs = options.freshMs ?? PUBLIC_SESSION_FRESH_MS
   let servedFromSession = false
   const hydratingAtSetup = import.meta.client && useNuxtApp().isHydrating
   let revalidationController: AbortController | null = null
@@ -146,14 +203,27 @@ export function useStaleFirstPublicResource<TData>(
 
   if (import.meta.client && getCurrentInstance()) {
     onMounted(() => {
-      if (servedFromSession || (hydratingAtSetup && shouldRecoverHydratedFailure(state.error.value))) {
+      if (hydratingAtSetup && shouldRecoverHydratedFailure(state.error.value)) {
+        void revalidate(initialKey)
+        return
+      }
+      // Soft revalidation: skip network when session data is still fresh (e.g. post → home).
+      if (servedFromSession && !isSessionFresh(initialKey, freshMs)) {
         void revalidate(initialKey)
       }
     })
     watch(currentKey, (nextKey, previousKey) => {
       if (nextKey === previousKey) return
       const cached = readSessionResponse<TData>(nextKey)
-      state.data.value = (cached ?? null) as never
+      if (cached !== undefined) {
+        state.data.value = cached as never
+        state.error.value = null
+        if (isSessionFresh(nextKey, freshMs)) return
+        void revalidate(nextKey)
+        return
+      }
+      // No cache for the next key: keep the previous payload visible (stale-while-revalidate)
+      // so pagination/sort swaps do not flash an empty list while the next page loads.
       state.error.value = null
       void revalidate(nextKey)
     })

@@ -265,12 +265,15 @@ select {
   border-radius: var(--radius-card);
   background: var(--color-panel);
   box-shadow: var(--shadow-card);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  transition: box-shadow 0.16s ease, border-color 0.16s ease;
 }
 
-.sidebar-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card-hover);
+/* Side rail cards: border/shadow only — no lift (keeps sticky columns calm). */
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-card:hover {
+    border-color: rgba(var(--color-accent-rgb), 0.28);
+    box-shadow: var(--shadow-card-hover);
+  }
 }
 
 /* Frosted card surfaces over the ambient background (light blur — kept cheap). */
@@ -300,7 +303,7 @@ select {
   }
 }
 
-/* ---- Subtle motion (opacity only; honors prefers-reduced-motion) ---- */
+/* ---- Subtle motion (opacity-only entrance; transform hover only on fine pointers) ---- */
 
 @keyframes rise-in {
   from {
@@ -328,6 +331,18 @@ select {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Kill transform hover jumps — zero duration alone still applies the end transform. */
+  .article-card,
+  .article-card *,
+  .sidebar-card,
+  .home-intro-card,
+  .pinned-card,
+  .taxonomy-list__card,
+  .hotspot-stats-card,
+  .hotspot-stats-card * {
+    transform: none !important;
   }
 }
 

@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import HomeView from '~/components/home/HomeView.vue'
-import { useHomeBootstrap } from '~/composables/usePublicApi'
+import { prefetchPostFeed, useHomeShell, usePostFeed } from '~/composables/usePublicApi'
 import { useOptionalPublicSiteConfigData } from '~/composables/useSiteConfig'
 import { useHomeSeo } from '~/composables/useSeo'
 import { HOME_FEED_PAGE_SIZE, homeFeedSortValues, sortOrderValues, type HomeFeedSort, type SortOrder } from '~/types/home-feed'
 import { resolvedHomePageReplacement } from '~/utils/home-feed-navigation'
 
-const route = useRoute()
+// Stable page key: pagination/sort only revalidates the feed resource, not the whole page shell.
+definePageMeta({ key: 'home' })
 
-definePageMeta({ key: route => route.fullPath })
+const route = useRoute()
 
 function queryValue(value: unknown): string | undefined {
   return Array.isArray(value) ? String(value[0] ?? '') : typeof value === 'string' ? value : undefined
@@ -28,18 +29,30 @@ const feedQuery = computed(() => {
 })
 
 const siteConfig = useOptionalPublicSiteConfigData()
-const { data: bootstrap, error } = await useHomeBootstrap(feedQuery)
+// Shell skips feed D1; list is always `/api/v1/posts` so page/sort never doubles the article query.
+const [
+  { data: bootstrap, error: shellError },
+  { data: feedPage, error: feedError }
+] = await Promise.all([
+  useHomeShell(),
+  usePostFeed(feedQuery)
+])
 
-if (error.value && import.meta.server) {
+if (shellError.value && import.meta.server) {
   const event = useRequestEvent()
   if (event) setResponseStatus(event, 503, 'Homepage temporarily unavailable')
 }
-if (error.value && import.meta.client && !useNuxtApp().isHydrating) {
+if (feedError.value && import.meta.server) {
+  const event = useRequestEvent()
+  if (event) setResponseStatus(event, 503, 'Homepage temporarily unavailable')
+}
+// Shell failure is fatal on the client; a feed-only failure keeps the chrome and empty/stale list.
+if (shellError.value && import.meta.client && !useNuxtApp().isHydrating) {
   throw createError({ statusCode: 503, statusMessage: 'Homepage temporarily unavailable', fatal: true })
 }
 
-const feedItems = computed(() => bootstrap.value?.data.feed.items ?? [])
-const feedMeta = computed(() => bootstrap.value?.data.feed.meta ?? ({
+const feedItems = computed(() => feedPage.value?.data ?? [])
+const feedMeta = computed(() => feedPage.value?.meta ?? ({
   ...feedQuery.value,
   pageSize: HOME_FEED_PAGE_SIZE,
   total: 0,
@@ -51,9 +64,9 @@ const profile = computed(() => siteConfig.value?.data.profile ?? null)
 const hotspots = computed(() => bootstrap.value?.data.hotspots ?? null)
 const railData = computed(() => bootstrap.value?.data.homeRail ?? null)
 
-watch(bootstrap, (resolvedBootstrap) => {
-  const meta = resolvedBootstrap?.data.feed.meta
-  if (import.meta.client && meta?.effectiveSort && meta.effectiveSort !== feedQuery.value.sort) {
+watch(() => feedPage.value?.meta, (meta) => {
+  if (!meta) return
+  if (import.meta.client && meta.effectiveSort && meta.effectiveSort !== feedQuery.value.sort) {
     void navigateTo({
       path: '/',
       query: { sort: meta.effectiveSort, order: 'desc', page: String(meta.page) },
@@ -62,8 +75,9 @@ watch(bootstrap, (resolvedBootstrap) => {
     return
   }
   const page = resolvedHomePageReplacement(
-    meta?.page,
-    feedQuery.value.page
+    meta.page,
+    feedQuery.value.page,
+    meta.pageCount
   )
   if (import.meta.server || page === null) return
   void navigateTo({
@@ -72,6 +86,22 @@ watch(bootstrap, (resolvedBootstrap) => {
     hash: '#articles'
   }, { replace: true })
 }, { immediate: !import.meta.server })
+
+function warmAdjacentFeedPages() {
+  if (!import.meta.client) return
+  const meta = feedMeta.value
+  const query = feedQuery.value
+  const pageCount = meta.pageCount ?? 0
+  if (pageCount <= 1) return
+  const neighbors = [query.page - 1, query.page + 1].filter((page) => page >= 1 && page <= pageCount)
+  for (const page of neighbors) {
+    void prefetchPostFeed({ ...query, page })
+  }
+}
+
+// After first paint / each feed settlement, warm next/prev so clicks hit session cache.
+watch(feedPage, () => { warmAdjacentFeedPages() }, { flush: 'post' })
+onMounted(() => { warmAdjacentFeedPages() })
 
 // Homepage keeps the site-name title (no page suffix) and adds WebSite site-identity JSON-LD.
 useHomeSeo()

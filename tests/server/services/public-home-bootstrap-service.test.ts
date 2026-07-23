@@ -152,7 +152,7 @@ describe('public home bootstrap service', () => {
     expect(Object.values(dependencies).every((read) => read.mock.calls.length === 1)).toBe(true)
   })
 
-  it('keeps the feed required', async () => {
+  it('keeps the feed required when includeFeed is enabled', async () => {
     const failure = new Error('feed unavailable')
     const service = createPublicHomeBootstrapService({
       getFeed: vi.fn().mockRejectedValue(failure),
@@ -163,5 +163,35 @@ describe('public home bootstrap service', () => {
     })
 
     await expect(service.getBootstrap(query)).rejects.toBe(failure)
+  })
+
+  it('skips the feed read entirely for shell-only bootstrap', async () => {
+    const getFeed = vi.fn()
+    const service = createPublicHomeBootstrapService({
+      getFeed,
+      getFeatured: vi.fn().mockResolvedValue([article('f1')]),
+      getHotspots: vi.fn().mockResolvedValue({ current: [], historical: [] }),
+      getHomeRail: vi.fn().mockResolvedValue({ cards: {} }),
+      getTags: vi.fn().mockResolvedValue([])
+    })
+
+    await expect(service.getBootstrap(query, { includeFeed: false })).resolves.toMatchObject({
+      data: {
+        feed: {
+          items: [],
+          meta: {
+            page: 1,
+            pageSize: 25,
+            total: 0,
+            pageCount: 0,
+            sort: 'publishedAt',
+            order: 'desc'
+          }
+        },
+        featured: [article('f1')]
+      },
+      degraded: []
+    })
+    expect(getFeed).not.toHaveBeenCalled()
   })
 })

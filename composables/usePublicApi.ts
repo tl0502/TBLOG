@@ -10,7 +10,12 @@ import type {
   TaxonomyView
 } from '~/types/public-view'
 import type { HomeFeedMeta, HomeFeedSort, SortOrder } from '~/types/home-feed'
-import { publicResourceKey, useStaleFirstPublicResource } from '~/composables/useStaleFirstPublicResource'
+import { HOME_FEED_PAGE_SIZE } from '~/types/home-feed'
+import {
+  prefetchStaleFirstPublicResource,
+  publicResourceKey,
+  useStaleFirstPublicResource
+} from '~/composables/useStaleFirstPublicResource'
 
 interface ListMeta {
   nextCursor: string | null
@@ -48,6 +53,34 @@ export function usePostFeed(query: MaybeRefOrGetter<HomeFeedQuery>) {
   return useStaleFirstPublicResource<Envelope<ArticleListItemView[], HomeFeedMeta>>('/api/v1/posts', {
     key: computed(() => publicResourceKey('posts', resolvedQuery.value)),
     query: resolvedQuery
+  })
+}
+
+/** Warm the session cache for a home-feed page (used after paint to speed next/prev clicks). */
+export function prefetchPostFeed(query: HomeFeedQuery) {
+  return prefetchStaleFirstPublicResource<Envelope<ArticleListItemView[], HomeFeedMeta>>('/api/v1/posts', {
+    key: publicResourceKey('posts', query),
+    query
+  })
+}
+
+/**
+ * Homepage chrome only (featured / hotspots / rail / tags). Skips the feed D1 read so the list
+ * can load from `/api/v1/posts` without doubling work. Stable key — not tied to feed page/sort.
+ */
+export function useHomeShell() {
+  const query = {
+    page: 1,
+    limit: HOME_FEED_PAGE_SIZE,
+    sort: 'publishedAt' as const,
+    order: 'desc' as const,
+    includeFeed: 0 as const
+  }
+  return useStaleFirstPublicResource<Envelope<HomeBootstrapView, { degraded: HomeBootstrapDegradedSection[] }>>('/api/v1/home', {
+    key: publicResourceKey('home-shell'),
+    query,
+    // Shell changes rarely; keep it warm longer when bouncing between post detail and home.
+    freshMs: 120_000
   })
 }
 

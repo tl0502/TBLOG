@@ -56,11 +56,43 @@ describe('public home bootstrap route', () => {
     vi.mocked(createPublicHomeBootstrapServiceForEvent).mockReturnValue({ getBootstrap } as never)
     const { event, headers } = makeEvent()
 
-    await expect((route as Handler)(event)).resolves.toEqual({ data: value, meta: { degraded: [] } })
-    expect(getBootstrap).toHaveBeenCalledWith({
-      page: 1, limit: 25, sort: 'publishedAt', order: 'desc'
+    await expect((route as Handler)(event)).resolves.toEqual({
+      data: value,
+      meta: { degraded: [], includeFeed: true }
     })
+    expect(getBootstrap).toHaveBeenCalledWith(
+      { page: 1, limit: 25, sort: 'publishedAt', order: 'desc' },
+      { includeFeed: true }
+    )
     expect(headers['Cache-Control']).toBe('no-store')
+  })
+
+  it('forwards includeFeed=0 so the homepage shell can skip the feed read', async () => {
+    vi.mocked(getQuery).mockReturnValue({ includeFeed: '0' })
+    const value = {
+      feed: {
+        items: [],
+        meta: {
+          page: 1, pageSize: 25, total: 0, pageCount: 0,
+          sort: 'publishedAt', order: 'desc'
+        }
+      },
+      featured: [],
+      hotspots: { current: [], historical: [] },
+      homeRail: { cards: {} },
+      tags: []
+    }
+    const getBootstrap = vi.fn().mockResolvedValue({ data: value, degraded: [] })
+    vi.mocked(createPublicHomeBootstrapServiceForEvent).mockReturnValue({ getBootstrap } as never)
+    const { event } = makeEvent()
+
+    await expect((route as Handler)(event)).resolves.toMatchObject({
+      meta: { includeFeed: false }
+    })
+    expect(getBootstrap).toHaveBeenCalledWith(
+      { page: 1, limit: 25, sort: 'publishedAt', order: 'desc' },
+      { includeFeed: false }
+    )
   })
 
   it('maps an invalid home-feed query to 400 before constructing the service', async () => {

@@ -127,13 +127,15 @@ const effectiveOrder = computed(() => effectiveSort.value === props.feedMeta.sor
 }
 
 .home__rail :deep(.sidebar-card) {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.home__rail :deep(.sidebar-card:hover) {
-  border-color: rgba(var(--color-accent-rgb), 0.42);
-  box-shadow: 0 22px 52px rgba(var(--color-text-rgb), 0.12);
-  transform: translateY(-4px);
+/* Sticky rail: no translateY — quiet hover keeps the column from "bobbing". */
+@media (hover: hover) and (pointer: fine) {
+  .home__rail :deep(.sidebar-card:hover) {
+    border-color: rgba(var(--color-accent-rgb), 0.36);
+    box-shadow: var(--shadow-card-hover);
+  }
 }
 
 .home__feed {
