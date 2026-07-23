@@ -74,6 +74,31 @@ describe('IntegrationProviderCard', () => {
     expect(wrapper.emitted('save')).toEqual([[{ enabled: false, config: {} }]])
   })
 
+  it('renders detected model suggestions as a datalist for text fields', () => {
+    const wrapper = mountCard({
+      capability: 'commentModeration',
+      providerKey: 'http',
+      displayName: 'OpenAI-Compatible LLM',
+      config: { model: 'safe-model' },
+      formMeta: [{
+        key: 'model',
+        label: 'Model',
+        type: 'text',
+        required: true,
+        options: [
+          { value: 'safe-model', label: 'safe-model' },
+          { value: 'other-model', label: 'other-model' }
+        ]
+      }],
+      actions: [{ key: 'listModels', label: 'Detect models' }]
+    })
+
+    const input = wrapper.get('[data-test="integration-field-model"]').element as HTMLInputElement
+    expect(input.getAttribute('list')).toContain('datalist-')
+    expect(wrapper.get('[data-test="integration-datalist-model"]').html()).toContain('other-model')
+    expect(wrapper.get('[data-test="integration-action-listModels"]').text()).toContain('检测模型')
+  })
+
   it('localizes analytics registry field labels by provider semantics', () => {
     const wrapper = mountCard({
       capability: 'analytics',

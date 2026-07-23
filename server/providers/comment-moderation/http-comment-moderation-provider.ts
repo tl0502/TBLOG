@@ -1,11 +1,27 @@
 import { z } from 'zod'
 import {
   CommentModerationProviderError,
+  type CommentModerationInput,
   type CommentModerationProvider,
   type CommentModerationResult
 } from './comment-moderation-provider'
 
 const MAX_RESPONSE_BYTES = 65_536
+const MAX_COMPLETION_TOKENS = 300
+
+export const OPENAI_COMPAT_MODERATION_SYSTEM_PROMPT = [
+  'You are a blog comment moderation classifier.',
+  'Decide whether the submitted comment should be published.',
+  'Reply with a single JSON object only. No markdown fences, no prose.',
+  'Schema:',
+  '{"decision":"allow"|"reject","confidence":0.0-1.0,"categories":string[],"reasons":string[]}',
+  'Rules:',
+  '- allow: safe enough to publish',
+  '- reject: spam, abuse, hate, scams, sexual content involving minors, or other policy violations',
+  '- confidence is how sure you are (0-1); use values >= 0.9 only when certain',
+  '- categories and reasons must be short English tokens/phrases',
+  '- judge only the provided nickname, comment, locale, and post metadata'
+].join('\n')
 
 async function readLimitedResponseBody(response: Response): Promise<string> {
   const declaredLength = Number(response.headers.get('content-length'))
@@ -38,21 +54,182 @@ async function readLimitedResponseBody(response: Response): Promise<string> {
   }
 }
 
-const responseSchema = z
+const decisionSchema = z
   .object({
     decision: z.enum(['allow', 'reject']),
     confidence: z.number().min(0).max(1).nullable().optional().default(null),
     categories: z.array(z.string().trim().min(1).max(100)).max(50).optional().default([]),
-    reasons: z.array(z.string().trim().min(1).max(500)).max(50).optional().default([]),
-    requestId: z.string().trim().min(1).max(200).nullable().optional().default(null),
-    modelVersion: z.string().trim().min(1).max(200).nullable().optional().default(null)
+    reasons: z.array(z.string().trim().min(1).max(500)).max(50).optional().default([])
   })
   .strip()
 
-export interface HttpCommentModerationProviderOptions {
+const chatCompletionSchema = z
+  .object({
+    id: z.string().trim().min(1).max(200).optional(),
+    model: z.string().trim().min(1).max(200).optional(),
+    choices: z
+      .array(
+        z
+          .object({
+            message: z
+              .object({
+                content: z.string().min(1).max(8_000)
+              })
+              .strip()
+          })
+          .strip()
+      )
+      .min(1)
+  })
+  .strip()
+
+function moderationUserMessage(input: CommentModerationInput): string {
+  return [
+    `Nickname: ${input.nickname}`,
+    `Locale: ${input.locale}`,
+    `Post ID: ${input.post.id}`,
+    `Post title: ${input.post.title}`,
+    `Comment:\n${input.content}`
+  ].join('\n')
+}
+
+/** Extract a JSON object from plain model output or a fenced ```json block. */
+export function extractJsonObject(content: string): string {
+  const trimmed = content.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  const candidate = (fenced?.[1] ?? trimmed).trim()
+  if (candidate.startsWith('{') && candidate.endsWith('}')) return candidate
+
+  const start = candidate.indexOf('{')
+  const end = candidate.lastIndexOf('}')
+  if (start >= 0 && end > start) return candidate.slice(start, end + 1)
+
+  throw new CommentModerationProviderError()
+}
+
+function normalizeDecision(
+  content: string,
+  envelope: z.infer<typeof chatCompletionSchema>,
+  fallbackModel: string
+): CommentModerationResult {
+  let json: unknown
+  try {
+    json = JSON.parse(extractJsonObject(content))
+  } catch (error) {
+    if (error instanceof CommentModerationProviderError) throw error
+    throw new CommentModerationProviderError()
+  }
+
+  const parsed = decisionSchema.safeParse(json)
+  if (!parsed.success) throw new CommentModerationProviderError()
+
+  return {
+    decision: parsed.data.decision,
+    confidence: parsed.data.confidence,
+    categories: parsed.data.categories,
+    reasons: parsed.data.reasons,
+    providerRequestId: envelope.id ?? null,
+    modelVersion: envelope.model ?? fallbackModel
+  }
+}
+
+const MAX_LISTED_MODELS = 200
+
+const modelsListSchema = z
+  .object({
+    data: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(200).optional()
+          })
+          .passthrough()
+      )
+      .max(2_000)
+  })
+  .strip()
+
+/**
+ * Derive the OpenAI-compatible models list URL from a chat completions endpoint.
+ * `.../v1/chat/completions` → `.../v1/models`
+ */
+export function deriveOpenAiCompatibleModelsUrl(chatCompletionsUrl: string): string {
+  let url: URL
+  try {
+    url = new URL(chatCompletionsUrl)
+  } catch {
+    throw new CommentModerationProviderError()
+  }
+  const path = url.pathname.replace(/\/+$/u, '')
+  if (!path.endsWith('/chat/completions')) {
+    throw new CommentModerationProviderError()
+  }
+  url.pathname = `${path.slice(0, -'/chat/completions'.length)}/models`
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
+
+export interface ListOpenAiCompatibleModelsOptions {
   endpoint: string
   apiKey: string
-  model?: string | null
+  timeoutMs?: number
+  fetchImpl?: typeof fetch
+}
+
+/** GET /v1/models against an OpenAI-compatible gateway. */
+export async function listOpenAiCompatibleModels(
+  options: ListOpenAiCompatibleModelsOptions
+): Promise<string[]> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const timeoutMs = options.timeoutMs ?? 5_000
+  const modelsUrl = deriveOpenAiCompatibleModelsUrl(options.endpoint)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetchImpl(modelsUrl, {
+      method: 'GET',
+      redirect: 'error',
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${options.apiKey}`
+      }
+    })
+    if (!response.ok) throw new CommentModerationProviderError()
+
+    const text = await readLimitedResponseBody(response)
+    let json: unknown
+    try {
+      json = JSON.parse(text)
+    } catch {
+      throw new CommentModerationProviderError()
+    }
+
+    const parsed = modelsListSchema.safeParse(json)
+    if (!parsed.success) throw new CommentModerationProviderError()
+
+    const ids = [...new Set(
+      parsed.data.data
+        .map((entry) => entry.id?.trim() ?? '')
+        .filter((id) => id.length > 0)
+    )].sort((left, right) => left.localeCompare(right))
+    if (ids.length === 0) throw new CommentModerationProviderError()
+    return ids.slice(0, MAX_LISTED_MODELS)
+  } catch (error) {
+    if (error instanceof CommentModerationProviderError) throw error
+    throw new CommentModerationProviderError()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export interface HttpCommentModerationProviderOptions {
+  /** Full OpenAI-compatible chat completions URL, e.g. https://api.example.com/v1/chat/completions */
+  endpoint: string
+  apiKey: string
+  model: string
   timeoutMs?: number
   fetchImpl?: typeof fetch
 }
@@ -62,6 +239,8 @@ export function createHttpCommentModerationProvider(
 ): CommentModerationProvider {
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? 5_000
+  const model = options.model.trim()
+  if (!model) throw new CommentModerationProviderError()
 
   return {
     providerKey: 'http',
@@ -80,24 +259,20 @@ export function createHttpCommentModerationProvider(
             'content-type': 'application/json'
           },
           body: JSON.stringify({
-            version: '1',
-            model: options.model ?? null,
-            moderatedFields: ['nickname', 'content'],
-            comment: {
-              nickname: input.nickname,
-              content: input.content,
-              locale: input.locale
-            },
-            post: input.post
+            model,
+            temperature: 0,
+            stream: false,
+            max_tokens: MAX_COMPLETION_TOKENS,
+            messages: [
+              { role: 'system', content: OPENAI_COMPAT_MODERATION_SYSTEM_PROMPT },
+              { role: 'user', content: moderationUserMessage(input) }
+            ]
           })
         })
 
-        if (!response.ok) {
-          throw new CommentModerationProviderError()
-        }
+        if (!response.ok) throw new CommentModerationProviderError()
 
         const text = await readLimitedResponseBody(response)
-
         let json: unknown
         try {
           json = JSON.parse(text)
@@ -105,23 +280,14 @@ export function createHttpCommentModerationProvider(
           throw new CommentModerationProviderError()
         }
 
-        const parsed = responseSchema.safeParse(json)
-        if (!parsed.success) {
-          throw new CommentModerationProviderError()
-        }
+        const envelope = chatCompletionSchema.safeParse(json)
+        if (!envelope.success) throw new CommentModerationProviderError()
 
-        return {
-          decision: parsed.data.decision,
-          confidence: parsed.data.confidence,
-          categories: parsed.data.categories,
-          reasons: parsed.data.reasons,
-          providerRequestId: parsed.data.requestId,
-          modelVersion: parsed.data.modelVersion
-        }
+        const content = envelope.data.choices[0]?.message.content
+        if (!content) throw new CommentModerationProviderError()
+        return normalizeDecision(content, envelope.data, model)
       } catch (error) {
-        if (error instanceof CommentModerationProviderError) {
-          throw error
-        }
+        if (error instanceof CommentModerationProviderError) throw error
         throw new CommentModerationProviderError()
       } finally {
         clearTimeout(timeout)

@@ -147,7 +147,8 @@ function fieldLabel(key: string, fallback: string): string {
     appId: 'integrations.field.appId', searchOnlyKey: 'integrations.field.searchOnlyKey', indexName: 'integrations.field.indexName',
     siteKey: 'integrations.field.siteKey', keyPrefix: 'integrations.field.keyPrefix', ttlSeconds: 'integrations.field.ttlSeconds',
     publicBaseUrl: 'integrations.field.publicBaseUrl', thumbnail: 'integrations.field.thumbnail',
-    medium: 'integrations.field.medium', large: 'integrations.field.large'
+    medium: 'integrations.field.medium', large: 'integrations.field.large',
+    endpoint: 'integrations.field.endpoint', model: 'integrations.field.model', timeoutMs: 'integrations.field.timeoutMs'
   } as const
   return key in keys ? t(keys[key as keyof typeof keys]) : fallback
 }
@@ -163,6 +164,7 @@ function actionLabel(key: string, fallback: string): string {
     return t('integrations.action.checkConfigurationBinding')
   }
   if (key === 'test') return t('integrations.action.test')
+  if (key === 'listModels') return t('integrations.action.listModels')
   if (key === 'generateCredential') return t('integrations.action.generateCredential')
   if (key === 'resync') return t('integrations.action.resync')
   return fallback
@@ -171,6 +173,18 @@ function actionLabel(key: string, fallback: string): string {
 function fieldHelp(key: string, fallback: string): string {
   if (props.integration.providerKey === 'cloudflare-kv' && key === 'keyPrefix') return t('integrations.help.kvKeyPrefix')
   if (props.integration.providerKey === 'cloudflare-r2' && key === 'keyPrefix') return t('integrations.help.r2KeyPrefix')
+  if (
+    props.integration.capability === 'commentModeration'
+    && props.integration.providerKey === 'http'
+  ) {
+    if (key === 'endpoint') return t('integrations.help.llmEndpoint')
+    if (key === 'model') {
+      return (props.integration.formMeta.find((meta) => meta.key === 'model')?.options?.length ?? 0) > 0
+        ? t('integrations.help.llmModelWithMenu')
+        : t('integrations.help.llmModel')
+    }
+    if (key === 'timeoutMs') return t('integrations.help.llmTimeoutMs')
+  }
   const keys = {
     appId: 'integrations.help.appId', searchOnlyKey: 'integrations.help.searchOnlyKey', indexName: 'integrations.help.indexName',
     siteKey: 'integrations.help.siteKey', ttlSeconds: 'integrations.help.ttlSeconds', publicBaseUrl: 'integrations.help.publicBaseUrl'
@@ -271,16 +285,34 @@ function fieldHelp(key: string, fallback: string): string {
             {{ option.label }}
           </option>
         </select>
-        <input
-          v-else
-          :id="`field-${integration.capability}-${integration.providerKey}-${meta.key}`"
-          v-model="fields[meta.key]"
-          class="integration-form__input"
-          :type="meta.type === 'url' ? 'url' : meta.type === 'password' ? 'password' : 'text'"
-          :placeholder="meta.placeholder"
-          :data-test="`integration-field-${meta.key}`"
-          :disabled="busy"
-        >
+        <template v-else>
+          <input
+            :id="`field-${integration.capability}-${integration.providerKey}-${meta.key}`"
+            v-model="fields[meta.key]"
+            class="integration-form__input"
+            :type="meta.type === 'url' ? 'url' : meta.type === 'password' ? 'password' : 'text'"
+            :placeholder="meta.placeholder"
+            :list="meta.options?.length
+              ? `datalist-${integration.capability}-${integration.providerKey}-${meta.key}`
+              : undefined"
+            :data-test="`integration-field-${meta.key}`"
+            :disabled="busy"
+            autocomplete="off"
+          >
+          <datalist
+            v-if="meta.options?.length"
+            :id="`datalist-${integration.capability}-${integration.providerKey}-${meta.key}`"
+            :data-test="`integration-datalist-${meta.key}`"
+          >
+            <option
+              v-for="option in meta.options"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </datalist>
+        </template>
 
         <p v-if="meta.help" class="integration-form__help">{{ fieldHelp(meta.key, meta.help) }}</p>
       </div>

@@ -144,6 +144,30 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
     return registration.resolveRequiredSecrets?.(config) ?? registration.requiredSecrets
   }
 
+  function formMetaFor(
+    registration: ProviderRegistration,
+    config: Record<string, unknown>
+  ): ProviderRegistration['formMeta'] {
+    return registration.resolveFormMeta?.(config) ?? registration.formMeta
+  }
+
+  function mergeServerManagedConfig(
+    registration: ProviderRegistration,
+    next: Record<string, unknown>,
+    previous: Record<string, unknown>,
+    rawCommandConfig: Record<string, unknown>
+  ): Record<string, unknown> {
+    const keys = registration.serverManagedConfigKeys
+    if (!keys?.length) return next
+    const merged = { ...next }
+    for (const key of keys) {
+      if (!(key in rawCommandConfig) && key in previous) {
+        merged[key] = previous[key]
+      }
+    }
+    return merged
+  }
+
   function buildView(
     registration: ProviderRegistration,
     state: {
@@ -168,7 +192,7 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
       requiredBindings: registration.requiredBindings,
       missingSecrets: missing(secrets),
       missingBindings: missing(registration.requiredBindings),
-      formMeta: registration.formMeta,
+      formMeta: formMetaFor(registration, state.config),
       actions: registration.actions ?? []
     }
   }
@@ -210,6 +234,15 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
       requireIntegrationPermission(permissions)
       const registration = requireRegistration(capability, providerKey)
 
+      const previousRow = await dependencies.integrationRepository.findByCapabilityAndProvider(
+        registration.capability,
+        registration.providerKey
+      )
+      const previousParsed = parseStoredProviderConfig(
+        registration,
+        previousRow?.publicConfigJson ?? null
+      )
+
       let config: Record<string, unknown>
       try {
         config = registration.configSchema.parse(command.config) as Record<string, unknown>
@@ -221,6 +254,12 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
         }
         throw error
       }
+      config = mergeServerManagedConfig(
+        registration,
+        config,
+        previousParsed.config,
+        command.config
+      )
 
       const validationError = registration.validate(config)
       if (validationError) {
@@ -231,10 +270,11 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
       let enabled = command.enabled
       let status: IntegrationStatus
       let lastError: string | null = null
+      const formMeta = formMetaFor(registration, config)
 
       if (command.enabled) {
         const secrets = requiredSecrets(registration, config)
-        const missingFields = registration.formMeta
+        const missingFields = formMeta
           .filter((field) => field.required && isEmpty(config[field.key]))
           .map((field) => field.key)
         const missingRequirements = [
@@ -365,83 +405,97 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
         registration.providerKey
       )
       const parsed = parseStoredProviderConfig(registration, row?.publicConfigJson ?? null)
-      const config = parsed.config
+      let config = parsed.config
       const timestamp = now()
 
       let status: IntegrationStatus
       let lastError: string | null
+      let publicConfigJson = row?.publicConfigJson ?? JSON.stringify(config)
 
       if (parsed.error) {
         status = 'misconfigured'
         lastError = parsed.error
-      } else if (
-        registration.capability === 'search' &&
-        actionKey === 'resync' &&
-        dependencies.searchProviderFactory &&
-        dependencies.searchResyncRepository
-      ) {
-        // Full index rebuild. Resync can be triggered manually even when the row is not marked
-        // enabled — readiness is decided solely by complete config + admin secret. A failing
-        // rebuild must not corrupt core state, so provider errors are captured as retryable state.
-        const provider = dependencies.searchProviderFactory({ config, env })
-        if (!provider) {
-          // Credentials incomplete: never report a rebuild that did nothing as success.
-          status = 'misconfigured'
-          lastError = 'Search is not fully configured (missing app id, index name, or admin key)'
-        } else {
-          try {
-            const records = await dependencies.searchResyncRepository.listAllPublishedSearchRecords()
-            await provider.replaceAllRecords(records)
-            await dependencies.searchSyncJobRepository?.clearProvider(registration.providerKey)
-            status = 'active'
-            lastError = null
-          } catch (error) {
+      } else {
+        const handled = registration.executeAction
+          ? await registration.executeAction(actionKey, config, env)
+          : null
+
+        if (handled) {
+          config = handled.config
+          publicConfigJson = JSON.stringify(config)
+          status = !row?.enabled && (handled.status === 'active' || handled.status === 'configured')
+            ? 'disabled'
+            : handled.status
+          lastError = handled.error ?? null
+        } else if (
+          registration.capability === 'search'
+          && actionKey === 'resync'
+          && dependencies.searchProviderFactory
+          && dependencies.searchResyncRepository
+        ) {
+          // Full index rebuild. Resync can be triggered manually even when the row is not marked
+          // enabled — readiness is decided solely by complete config + admin secret. A failing
+          // rebuild must not corrupt core state, so provider errors are captured as retryable state.
+          const provider = dependencies.searchProviderFactory({ config, env })
+          if (!provider) {
+            // Credentials incomplete: never report a rebuild that did nothing as success.
             status = 'misconfigured'
-            lastError = error instanceof Error ? error.message : 'Search resync failed'
-          }
-        }
-      } else if (
-        registration.capability === 'commentReplica'
-        && actionKey === 'retry'
-        && dependencies.commentReplicaJobRepository
-        && registration.createCommentReplicaProvider
-      ) {
-        const provider = registration.createCommentReplicaProvider(config, env)
-        if (!provider) {
-          status = 'misconfigured'
-          lastError = 'Comment replica is not fully configured'
-        } else {
-          const jobs = await dependencies.commentReplicaJobRepository.listProviderJobs(providerKey, 20)
-          let failed = 0
-          for (const job of jobs) {
+            lastError = 'Search is not fully configured (missing app id, index name, or admin key)'
+          } else {
             try {
-              const event = JSON.parse(job.payloadJson) as CommentReplicaEvent
-              await provider.replicate(event)
-              await dependencies.commentReplicaJobRepository.complete(job.id, job.revision)
+              const records = await dependencies.searchResyncRepository.listAllPublishedSearchRecords()
+              await provider.replaceAllRecords(records)
+              await dependencies.searchSyncJobRepository?.clearProvider(registration.providerKey)
+              status = 'active'
+              lastError = null
             } catch (error) {
-              failed += 1
-              await dependencies.commentReplicaJobRepository.fail(
-                job.id,
-                job.revision,
-                error instanceof Error ? error.message : 'Replica retry failed',
-                timestamp
-              )
+              status = 'misconfigured'
+              lastError = error instanceof Error ? error.message : 'Search resync failed'
             }
           }
-          status = failed === 0 ? 'active' : 'unavailable'
-          lastError = failed === 0 ? null : `${failed} comment replica jobs failed`
-        }
-      } else {
-        try {
-          const result = await registration.checkStatus(config, env)
-          status = !row?.enabled && (result.status === 'active' || result.status === 'configured')
-            ? 'disabled'
-            : result.status
-          lastError = result.error ?? null
-        } catch (error) {
-          // A failing probe must not corrupt core state; surface it as retryable state instead.
-          status = 'misconfigured'
-          lastError = error instanceof Error ? error.message : 'Integration check failed'
+        } else if (
+          registration.capability === 'commentReplica'
+          && actionKey === 'retry'
+          && dependencies.commentReplicaJobRepository
+          && registration.createCommentReplicaProvider
+        ) {
+          const provider = registration.createCommentReplicaProvider(config, env)
+          if (!provider) {
+            status = 'misconfigured'
+            lastError = 'Comment replica is not fully configured'
+          } else {
+            const jobs = await dependencies.commentReplicaJobRepository.listProviderJobs(providerKey, 20)
+            let failed = 0
+            for (const job of jobs) {
+              try {
+                const event = JSON.parse(job.payloadJson) as CommentReplicaEvent
+                await provider.replicate(event)
+                await dependencies.commentReplicaJobRepository.complete(job.id, job.revision)
+              } catch (error) {
+                failed += 1
+                await dependencies.commentReplicaJobRepository.fail(
+                  job.id,
+                  job.revision,
+                  error instanceof Error ? error.message : 'Replica retry failed',
+                  timestamp
+                )
+              }
+            }
+            status = failed === 0 ? 'active' : 'unavailable'
+            lastError = failed === 0 ? null : `${failed} comment replica jobs failed`
+          }
+        } else {
+          try {
+            const result = await registration.checkStatus(config, env)
+            status = !row?.enabled && (result.status === 'active' || result.status === 'configured')
+              ? 'disabled'
+              : result.status
+            lastError = result.error ?? null
+          } catch (error) {
+            // A failing probe must not corrupt core state; surface it as retryable state instead.
+            status = 'misconfigured'
+            lastError = error instanceof Error ? error.message : 'Integration check failed'
+          }
         }
       }
 
@@ -449,7 +503,7 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
         capability: registration.capability,
         providerKey: registration.providerKey,
         enabled: row?.enabled ?? false,
-        publicConfigJson: row?.publicConfigJson ?? JSON.stringify(config),
+        publicConfigJson,
         status,
         lastCheckedAt: timestamp,
         lastError,

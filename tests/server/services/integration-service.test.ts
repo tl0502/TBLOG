@@ -206,7 +206,10 @@ describe('integration service', () => {
     repository.seed({
       capability: 'commentModeration', providerKey: 'http', enabled: true,
       publicConfigJson: JSON.stringify({
-        endpoint: 'https://moderation.example.com/v1/comments', model: null, timeoutMs: 5_000
+        endpoint: 'https://llm.example.com/v1/chat/completions',
+        model: 'safe-model',
+        timeoutMs: 5_000,
+        availableModels: []
       }),
       status: 'active', lastCheckedAt: NOW, lastError: null
     })

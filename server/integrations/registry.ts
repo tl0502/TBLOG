@@ -61,6 +61,12 @@ export interface ProviderAction {
  * editing unrelated UI pages. `configSchema` validates the shape of the public config; `validate`
  * performs provider-specific cross-field checks; `checkStatus` probes live readiness against `env`.
  */
+export interface ProviderActionResult {
+  config: Record<string, unknown>
+  status: IntegrationStatus
+  error?: string | null
+}
+
 export interface ProviderRegistration {
   capability: IntegrationCapability
   providerKey: string
@@ -79,6 +85,22 @@ export interface ProviderRegistration {
   ): string | null
   /** Resolve mode-dependent secret requirements from normalized public configuration. */
   resolveRequiredSecrets?(config: Record<string, unknown>): string[]
+  /**
+   * Keys written by server actions (or other non-form writers) that client saves must not wipe.
+   * When a client update omits these keys, the previously stored values are preserved.
+   */
+  serverManagedConfigKeys?: string[]
+  /** Optional per-config form metadata (e.g. model suggestion menus after Detect Models). */
+  resolveFormMeta?(config: Record<string, unknown>): FormFieldMeta[]
+  /**
+   * Optional custom action handler. Return null to fall through to the default status probe.
+   * When non-null, the service persists `config` and surfaces `status` / `error`.
+   */
+  executeAction?(
+    actionKey: string,
+    config: Record<string, unknown>,
+    env: IntegrationEnvironment
+  ): ProviderActionResult | Promise<ProviderActionResult | null> | null
   requiredSecrets: string[]
   requiredBindings: string[]
   formMeta: FormFieldMeta[]
