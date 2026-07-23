@@ -150,6 +150,23 @@ describe('HTTP OpenAI-compatible comment moderation integration registration', (
     )
   })
 
+  it('surfaces gateway HTTP status when Detect Models fails (helps distinguish auth vs block)', async () => {
+    const config = {
+      endpoint: 'https://llm.example.com/v1/chat/completions',
+      model: null
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response('denied', { status: 403 }))
+
+    await expect(httpCommentModerationRegistration.executeAction?.('listModels', config, {
+      COMMENT_MODERATION_API_KEY: 'secret',
+      fetch: fetchMock
+    })).resolves.toEqual({
+      config,
+      status: 'unavailable',
+      error: 'Unable to list models: Gateway models request failed (HTTP 403)'
+    })
+  })
+
   it('does not report active when the model omits confidence required by the policy', async () => {
     const config = {
       endpoint: 'https://llm.example.com/v1/chat/completions',

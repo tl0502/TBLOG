@@ -215,10 +215,17 @@ export const httpCommentModerationRegistration: ProviderRegistration = {
         error: null
       }
     } catch (error) {
-      const message = error instanceof CommentModerationProviderError
-        ? 'Unable to list models from the OpenAI-compatible gateway'
+      // Prefer the provider's public-safe detail (HTTP status / timeout / network) over a generic line.
+      const detail = error instanceof CommentModerationProviderError
+        ? error.message
         : 'Unable to list models from the OpenAI-compatible gateway'
-      return { config, status: 'unavailable', error: message }
+      return {
+        config,
+        status: 'unavailable',
+        error: detail.startsWith('Unable to list models')
+          ? detail
+          : `Unable to list models: ${detail}`
+      }
     }
   },
   publicProjection(config) {

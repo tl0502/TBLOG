@@ -197,29 +197,46 @@ export async function listOpenAiCompatibleModels(
         authorization: `Bearer ${options.apiKey}`
       }
     })
-    if (!response.ok) throw new CommentModerationProviderError()
+    // Public-safe status only — never surface response bodies (may include provider error text).
+    if (!response.ok) {
+      throw new CommentModerationProviderError(
+        `Gateway models request failed (HTTP ${response.status})`
+      )
+    }
 
     const text = await readLimitedResponseBody(response)
     let json: unknown
     try {
       json = JSON.parse(text)
     } catch {
-      throw new CommentModerationProviderError()
+      throw new CommentModerationProviderError('Gateway models response was not valid JSON')
     }
 
     const parsed = modelsListSchema.safeParse(json)
-    if (!parsed.success) throw new CommentModerationProviderError()
+    if (!parsed.success) {
+      throw new CommentModerationProviderError('Gateway models response shape is not OpenAI-compatible')
+    }
 
     const ids = [...new Set(
       parsed.data.data
         .map((entry) => entry.id?.trim() ?? '')
         .filter((id) => id.length > 0)
     )].sort((left, right) => left.localeCompare(right))
-    if (ids.length === 0) throw new CommentModerationProviderError()
+    if (ids.length === 0) {
+      throw new CommentModerationProviderError('Gateway returned an empty models list')
+    }
     return ids.slice(0, MAX_LISTED_MODELS)
   } catch (error) {
     if (error instanceof CommentModerationProviderError) throw error
-    throw new CommentModerationProviderError()
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new CommentModerationProviderError(
+        `Gateway models request timed out after ${timeoutMs}ms`
+      )
+    }
+    // Network / DNS / TLS / blocked egress — common when Workers edge IPs differ from local ISP.
+    throw new CommentModerationProviderError(
+      'Gateway models request failed (network error; edge egress may be blocked)'
+    )
   } finally {
     clearTimeout(timeout)
   }
