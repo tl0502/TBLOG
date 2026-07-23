@@ -5,6 +5,11 @@ import { useTblogI18n } from '~/composables/useTblogI18n'
 
 definePageMeta({ layout: false, middleware: 'admin' })
 
+// Login is layout:false (no admin shell); still emit noindex for crawlers that reach this URL.
+useHead(() => ({
+  meta: [{ name: 'robots', content: 'noindex,nofollow', key: 'robots' }]
+}))
+
 const route = useRoute()
 const username = ref('')
 const password = ref('')

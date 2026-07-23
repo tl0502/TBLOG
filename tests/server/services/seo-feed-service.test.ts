@@ -161,19 +161,21 @@ describe('seo feed service - sitemap', () => {
 })
 
 describe('seo feed service - robots', () => {
-  it('allows crawling and advertises the sitemap under the default policy', async () => {
+  it('blocks admin surfaces and advertises the sitemap under the default policy', async () => {
     const { text } = await build().getRobotsTxt()
-    expect(text).toBe('User-agent: *\nDisallow:\nSitemap: https://blog.example/sitemap.xml\n')
+    expect(text).toBe(
+      'User-agent: *\nDisallow: /admin\nDisallow: /api/v1/admin\nSitemap: https://blog.example/sitemap.xml\n'
+    )
   })
 
-  it('allows crawling so noindex metadata can be observed', async () => {
+  it('keeps public pages crawlable so noindex metadata can be observed', async () => {
     const { text } = await build({ seo: { robotsPolicy: 'noindex, nofollow' } }).getRobotsTxt()
-    expect(text).toContain('Disallow:\n')
-    expect(text).not.toContain('Disallow: /')
+    expect(text).toContain('Disallow: /admin\n')
+    expect(text).not.toContain('Disallow: /\n')
   })
 
   it('omits the sitemap line when the sitemap is disabled', async () => {
     const { text } = await build({ seo: { sitemapEnabled: false } }).getRobotsTxt()
-    expect(text).toBe('User-agent: *\nDisallow:\n')
+    expect(text).toBe('User-agent: *\nDisallow: /admin\nDisallow: /api/v1/admin\n')
   })
 })

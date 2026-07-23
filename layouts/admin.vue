@@ -46,6 +46,11 @@ const activeKey = computed(() => {
   return ''
 })
 
+// Keep admin out of search indexes even if a crawler ignores robots.txt path rules.
+useHead(() => ({
+  meta: [{ name: 'robots', content: 'noindex,nofollow', key: 'robots' }]
+}))
+
 async function handleSignOut() {
   await adminLogout()
   await navigateTo('/admin/login')

@@ -228,7 +228,15 @@ export function createPostReadRepository(
     async findPublishedDetailBySlug(slug) {
       const row = (await db.query.posts.findFirst({
         where: and(eq(posts.slug, slug), eq(posts.status, 'published')),
-        columns: { id: true, slug: true, title: true, type: true, cover: true, publishedAt: true },
+        columns: {
+          id: true,
+          slug: true,
+          title: true,
+          type: true,
+          cover: true,
+          publishedAt: true,
+          updatedAt: true
+        },
         with: {
           category: { columns: { slug: true, name: true } },
           content: {
@@ -249,6 +257,7 @@ export function createPostReadRepository(
       })) as
         | (ListRow & {
             type: 'article' | 'page'
+            updatedAt: Date
             content:
               | (ListRow['content'] & {
                   html: string | null
@@ -276,6 +285,7 @@ export function createPostReadRepository(
       return {
         ...toListItem(row),
         type: row.type,
+        updatedAt: row.updatedAt,
         html: row.content?.html ?? '',
         tocJson: row.content?.tocJson ?? null,
         codeMetaJson: row.content?.codeMetaJson ?? null,

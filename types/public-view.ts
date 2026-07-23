@@ -133,6 +133,8 @@ export interface PublicCommentReplyView {
 
 export interface PostDetailView extends ArticleListItemView {
   type: 'article' | 'page'
+  /** ISO timestamp of last content/metadata change; falls back to publishedAt when absent. */
+  updatedAt?: string | null
   html: string
   tocJson: string | null
   codeMeta: CodeBlockMetaView[]

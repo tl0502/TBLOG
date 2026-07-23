@@ -17,6 +17,7 @@ describe('admin layout', () => {
     vi.resetModules()
     vi.stubGlobal('useRoute', () => computed(() => route.value).value)
     vi.stubGlobal('useNuxtData', () => ({ data: dashboardData }))
+    vi.stubGlobal('useHead', vi.fn())
     vi.stubGlobal('navigateTo', vi.fn())
     api.useAdminSessionSnapshot.mockReturnValue(shallowRef({
       administrator: { username: 'editor' }, permissions: []

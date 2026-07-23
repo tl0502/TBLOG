@@ -33,6 +33,8 @@ export interface PublicPostSeoMetadata {
 
 export interface PublicPostDetail extends PublicPostListItem, PublicPostSeoMetadata {
   type: PostType
+  /** Last modification time for JSON-LD `dateModified` and article meta. */
+  updatedAt: Date
   html: string
   tocJson: string | null
   codeMeta: CodeBlockMeta[]
@@ -46,6 +48,7 @@ export interface PublicPostDetail extends PublicPostListItem, PublicPostSeoMetad
  */
 export interface PublicPostDetailSource extends PublicPostListItem, PublicPostSeoMetadata {
   type: PostType
+  updatedAt: Date
   html: string
   tocJson: string | null
   codeMetaJson: string | null

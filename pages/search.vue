@@ -10,7 +10,11 @@ import {
 import { useTblogI18n } from '~/composables/useTblogI18n'
 
 const { t } = useTblogI18n()
-useHead(() => ({ title: t('nav.search') }))
+// Search is a utility surface (often thin/query-driven); do not index it.
+useHead(() => ({
+  title: t('nav.search'),
+  meta: [{ name: 'robots', content: 'noindex,follow', key: 'robots' }]
+}))
 const route = useRoute()
 const router = useRouter()
 

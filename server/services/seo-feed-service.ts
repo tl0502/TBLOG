@@ -145,10 +145,13 @@ export function createSeoFeedService(dependencies: SeoFeedServiceDependencies) {
 
   function buildRobots(seo: SeoSettings): string {
     const base = baseUrlFor(seo)
-    // The configured robots policy is an HTML metadata directive. Crawlers must be allowed to fetch
-    // pages in order to observe `noindex`/`nofollow`; blocking here would make `noindex,follow`
-    // self-contradictory and can leave previously indexed URLs in search results.
-    const lines = ['User-agent: *', 'Disallow:']
+    // Public pages stay crawlable so HTML `meta robots` (including site-wide noindex) can be
+    // observed. Admin surfaces are blocked here and also emit noindex in the admin layout.
+    const lines = [
+      'User-agent: *',
+      'Disallow: /admin',
+      'Disallow: /api/v1/admin'
+    ]
     if (seo.sitemapEnabled) {
       lines.push(`Sitemap: ${absoluteUrl(base, '/sitemap.xml')}`)
     }

@@ -30,16 +30,39 @@ export function serializeJsonLd(value: unknown): string {
 
 export function useSiteSeoDefaults() {
   const route = useRoute()
-  const { siteName, defaultTitle, defaultDescription, robotsPolicy, canonicalFor, locale } =
-    useSeoContext()
+  const {
+    siteName,
+    defaultTitle,
+    defaultDescription,
+    robotsPolicy,
+    canonicalFor,
+    locale,
+    logoUrl,
+    toAbsolute,
+    config,
+    baseUrl
+  } = useSeoContext()
 
   const canonical = computed(() => canonicalFor(route.path))
+  const defaultShareImage = computed(() => toAbsolute(logoUrl.value))
+  const rssEnabled = computed(() => config.value?.seo.rssEnabled === true)
 
   useHead(() => ({
     titleTemplate: (title?: string) =>
       title ? `${title} · ${siteName.value}` : defaultTitle.value || siteName.value,
-    htmlAttrs: { lang: locale.value },
-    link: [{ rel: 'canonical', href: canonical.value, key: 'canonical' }],
+    // Document `lang` is owned by app.vue (site.locale) so UI language cookies cannot override SEO.
+    link: [
+      { rel: 'canonical', href: canonical.value, key: 'canonical' },
+      ...(rssEnabled.value
+        ? [{
+            rel: 'alternate',
+            type: 'application/rss+xml',
+            title: siteName.value,
+            href: `${baseUrl.value}/rss.xml`,
+            key: 'rss'
+          }]
+        : [])
+    ],
     meta: [{ name: 'robots', content: robotsPolicy.value, key: 'robots' }]
   }))
 
@@ -51,9 +74,11 @@ export function useSiteSeoDefaults() {
     ogDescription: () => defaultDescription.value ?? '',
     ogUrl: () => canonical.value,
     ogLocale: () => locale.value,
-    twitterCard: 'summary',
+    ogImage: () => defaultShareImage.value ?? undefined,
+    twitterCard: () => (defaultShareImage.value ? 'summary_large_image' : 'summary'),
     twitterTitle: () => defaultTitle.value || siteName.value,
-    twitterDescription: () => defaultDescription.value ?? ''
+    twitterDescription: () => defaultDescription.value ?? '',
+    twitterImage: () => defaultShareImage.value ?? undefined
   })
 }
 
@@ -108,12 +133,20 @@ export function useArticleSeo(post: Ref<PostDetailView | null>) {
     () => firstNonEmpty(post.value?.canonicalUrlOverride) ?? canonicalFor(route.path)
   )
   const ogImage = computed(() =>
-    toAbsolute(firstNonEmpty(post.value?.openGraphImageUrl, post.value?.cover))
+    toAbsolute(firstNonEmpty(post.value?.openGraphImageUrl, post.value?.cover, logoUrl.value))
   )
   const twitterImage = computed(() =>
-    toAbsolute(firstNonEmpty(post.value?.twitterImageUrl, post.value?.openGraphImageUrl, post.value?.cover))
+    toAbsolute(firstNonEmpty(
+      post.value?.twitterImageUrl,
+      post.value?.openGraphImageUrl,
+      post.value?.cover,
+      logoUrl.value
+    ))
   )
   const publisherLogo = computed(() => toAbsolute(logoUrl.value))
+  const modifiedAt = computed(
+    () => firstNonEmpty(post.value?.updatedAt, post.value?.publishedAt) ?? undefined
+  )
 
   useSeoMeta({
     title: () => title.value,
@@ -127,7 +160,8 @@ export function useArticleSeo(post: Ref<PostDetailView | null>) {
     ogImage: () => ogImage.value ?? undefined,
     twitterImage: () => twitterImage.value ?? undefined,
     twitterCard: () => (twitterImage.value ? 'summary_large_image' : 'summary'),
-    articlePublishedTime: () => post.value?.publishedAt
+    articlePublishedTime: () => post.value?.publishedAt,
+    articleModifiedTime: () => modifiedAt.value
   })
 
   useHead(() => ({
@@ -174,9 +208,12 @@ function buildArticleJsonLd(input: {
     '@type': 'Article',
     headline: firstNonEmpty(post.seoTitle, post.title) ?? post.title,
     datePublished: post.publishedAt,
-    dateModified: post.publishedAt,
+    dateModified: firstNonEmpty(post.updatedAt, post.publishedAt) ?? post.publishedAt,
     url: input.canonical,
-    mainEntityOfPage: input.canonical,
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': input.canonical
+    },
     author: { '@type': 'Person', name: input.siteName },
     publisher: {
       '@type': 'Organization',

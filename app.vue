@@ -29,10 +29,14 @@ onMounted(() => {
 })
 
 const faviconHref = computed(() => publicSiteConfig.value?.data.site.faviconUrl?.trim() || null)
+// Document language follows site content locale for SEO; UI cookie only drives i18n strings.
+const documentLang = computed(
+  () => publicSiteConfig.value?.data.site.locale?.trim() || locale.value
+)
 
 useHead(() => ({
   htmlAttrs: {
-    lang: locale.value,
+    lang: documentLang.value,
     'data-color-mode': preference.value,
     'data-theme': resolvedTheme.value,
     'data-light-theme': lightTheme.value
