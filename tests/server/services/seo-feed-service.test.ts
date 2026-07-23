@@ -16,10 +16,46 @@ const MAR = new Date('2026-03-01T00:00:00.000Z')
 
 function feedPosts(): FeedPostRef[] {
   return [
-    { slug: 'a', title: 'First & Best <post>', excerpt: 'Excerpt <A>', type: 'article', publishedAt: JUN, updatedAt: JUN },
-    { slug: 'b', title: 'Second', excerpt: null, type: 'article', publishedAt: MAY, updatedAt: MAY },
-    { slug: 'about', title: 'About', excerpt: 'About page', type: 'page', publishedAt: MAR, updatedAt: MAR },
-    { slug: 'contact', title: 'Contact', excerpt: 'Contact page', type: 'page', publishedAt: MAR, updatedAt: MAR }
+    {
+      slug: 'a',
+      title: 'First & Best <post>',
+      excerpt: 'Excerpt <A>',
+      seoTitle: 'SEO First <title>',
+      seoDescription: 'SEO Excerpt <A>',
+      type: 'article',
+      publishedAt: JUN,
+      updatedAt: JUN
+    },
+    {
+      slug: 'b',
+      title: 'Second',
+      excerpt: null,
+      seoTitle: null,
+      seoDescription: null,
+      type: 'article',
+      publishedAt: MAY,
+      updatedAt: MAY
+    },
+    {
+      slug: 'about',
+      title: 'About',
+      excerpt: 'About page',
+      seoTitle: null,
+      seoDescription: null,
+      type: 'page',
+      publishedAt: MAR,
+      updatedAt: MAR
+    },
+    {
+      slug: 'contact',
+      title: 'Contact',
+      excerpt: 'Contact page',
+      seoTitle: null,
+      seoDescription: null,
+      type: 'page',
+      publishedAt: MAR,
+      updatedAt: MAR
+    }
   ]
 }
 
@@ -31,7 +67,20 @@ function fakePostRepo(posts: FeedPostRef[] = feedPosts()): PostReadRepository {
     listPublishedArticlesByCategorySlug: async () => ({ items: [], nextCursor: null }),
     listPublishedArticlesByTagSlug: async () => ({ items: [], nextCursor: null }),
     listArchive: async () => [],
-    listFeedPosts: async () => posts,
+    listFeedPosts: async (query) => {
+      let rows = posts
+      if (query.scope === 'articles') {
+        rows = rows.filter((post) => post.type === 'article')
+      } else {
+        rows = rows.filter(
+          (post) => post.type === 'article' || (post.type === 'page' && post.slug === 'about')
+        )
+      }
+      if (typeof query.limit === 'number') {
+        rows = rows.slice(0, query.limit)
+      }
+      return rows
+    },
     listPublishedArticleIds: async () => [],
     listPublishedArticlesByIds: async () => []
   }
@@ -94,19 +143,22 @@ describe('seo feed service - rss', () => {
     expect(await service.getRssFeed()).toBeNull()
   })
 
-  it('lists published articles only, newest first, with escaped fields and absolute links', async () => {
+  it('lists published articles only, prefers SEO fields, and escapes absolute links', async () => {
     const feed = await build().getRssFeed()
     const xml = feed!.xml
 
     expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>')
     expect(xml).toContain('<title>My Blog</title>')
     expect(xml).toContain('<link>https://blog.example/</link>')
-    // Article items, escaped.
-    expect(xml).toContain('<title>First &amp; Best &lt;post&gt;</title>')
+    // SEO title/description win over body title/excerpt when present.
+    expect(xml).toContain('<title>SEO First &lt;title&gt;</title>')
+    expect(xml).not.toContain('<title>First &amp; Best &lt;post&gt;</title>')
     expect(xml).toContain('<link>https://blog.example/posts/a</link>')
     expect(xml).toContain('<guid isPermaLink="true">https://blog.example/posts/a</guid>')
     expect(xml).toContain('<pubDate>Mon, 01 Jun 2026 00:00:00 GMT</pubDate>')
-    expect(xml).toContain('<description>Excerpt &lt;A&gt;</description>')
+    expect(xml).toContain('<description>SEO Excerpt &lt;A&gt;</description>')
+    // Fallback article without SEO metadata still uses title.
+    expect(xml).toContain('<title>Second</title>')
     // Pages are never in the feed.
     expect(xml).not.toContain('/posts/about')
     expect(xml).not.toContain('<title>About</title>')

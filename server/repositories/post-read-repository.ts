@@ -4,6 +4,7 @@ import { categories, postTags, posts, tags } from '../database/schema'
 import { decodeCursor, encodeCursor } from '../utils/cursor'
 import type {
   ArchiveGroup,
+  FeedPostQuery,
   FeedPostRef,
   FeaturedPostReadRepository,
   HotspotPostReadRepository,
@@ -361,14 +362,31 @@ export function createPostReadRepository(
       return groups
     },
 
-    async listFeedPosts() {
-      // Articles and pages, newest first. Pages (e.g. About) are needed for the sitemap; the RSS
-      // feed filters to articles in the service. Only minimal columns — feeds never read stored HTML.
+    async listFeedPosts(query: FeedPostQuery) {
+      // Scope filters in SQL so RSS does not hydrate every published row. Feeds never read HTML.
+      const scopeFilter = query.scope === 'articles'
+        ? eq(posts.type, 'article')
+        : or(
+            eq(posts.type, 'article'),
+            and(eq(posts.type, 'page'), eq(posts.slug, 'about'))
+          )
+      const limit = typeof query.limit === 'number' && query.limit > 0
+        ? Math.min(Math.floor(query.limit), 5_000)
+        : undefined
+
       const rows = (await db.query.posts.findMany({
-        where: and(eq(posts.status, 'published'), isNotNull(posts.publishedAt)),
+        where: and(
+          eq(posts.status, 'published'),
+          isNotNull(posts.publishedAt),
+          scopeFilter
+        ),
         orderBy: [desc(posts.publishedAt), desc(posts.id)],
+        ...(limit !== undefined ? { limit } : {}),
         columns: { slug: true, title: true, type: true, publishedAt: true, updatedAt: true },
-        with: { content: { columns: { excerpt: true } } }
+        with: {
+          content: { columns: { excerpt: true } },
+          metadata: { columns: { seoTitle: true, seoDescription: true } }
+        }
       })) as {
         slug: string
         title: string
@@ -376,6 +394,7 @@ export function createPostReadRepository(
         publishedAt: Date | null
         updatedAt: Date
         content: { excerpt: string | null } | null
+        metadata: { seoTitle: string | null; seoDescription: string | null } | null
       }[]
 
       const feed: FeedPostRef[] = []
@@ -387,6 +406,8 @@ export function createPostReadRepository(
           slug: row.slug,
           title: row.title,
           excerpt: row.content?.excerpt ?? null,
+          seoTitle: row.metadata?.seoTitle ?? null,
+          seoDescription: row.metadata?.seoDescription ?? null,
           type: row.type,
           publishedAt: row.publishedAt,
           updatedAt: row.updatedAt

@@ -66,16 +66,23 @@ export function createSeoFeedService(dependencies: SeoFeedServiceDependencies) {
 
   async function buildRss(seo: SeoSettings, site: SiteSettings): Promise<string> {
     const base = baseUrlFor(seo)
-    const posts = await postReadRepository.listFeedPosts()
-    const articles = posts.filter((post) => post.type === 'article').slice(0, RSS_ITEM_LIMIT)
+    // SQL scope+LIMIT: only the newest N articles; SEO fields preferred for item text.
+    const articles = await postReadRepository.listFeedPosts({
+      scope: 'articles',
+      limit: RSS_ITEM_LIMIT
+    })
 
     const channelDescription = seo.defaultDescription?.trim() || site.description?.trim() || site.siteName
     const items = articles.map((post) => {
       const link = absoluteUrl(base, `/posts/${post.slug}`)
-      const description = post.excerpt ? `\n      <description>${escapeXml(post.excerpt)}</description>` : ''
+      const itemTitle = post.seoTitle?.trim() || post.title
+      const itemDescription = post.seoDescription?.trim() || post.excerpt
+      const description = itemDescription
+        ? `\n      <description>${escapeXml(itemDescription)}</description>`
+        : ''
       return [
         '    <item>',
-        `      <title>${escapeXml(post.title)}</title>`,
+        `      <title>${escapeXml(itemTitle)}</title>`,
         `      <link>${escapeXml(link)}</link>`,
         `      <guid isPermaLink="true">${escapeXml(link)}</guid>`,
         `      <pubDate>${toRfc822(post.publishedAt)}</pubDate>${description}`,
@@ -103,7 +110,7 @@ export function createSeoFeedService(dependencies: SeoFeedServiceDependencies) {
   async function buildSitemap(seo: SeoSettings): Promise<string> {
     const base = baseUrlFor(seo)
     const [posts, categories, tags] = await Promise.all([
-      postReadRepository.listFeedPosts(),
+      postReadRepository.listFeedPosts({ scope: 'sitemap' }),
       taxonomyReadRepository.listCategoriesWithCounts(),
       taxonomyReadRepository.listTagsWithCounts()
     ])
@@ -115,10 +122,7 @@ export function createSeoFeedService(dependencies: SeoFeedServiceDependencies) {
       { loc: absoluteUrl(base, '/tags') }
     ]
 
-    const publicPosts = posts.filter(
-      (post) => post.type === 'article' || (post.type === 'page' && post.slug === 'about')
-    )
-    for (const post of publicPosts) {
+    for (const post of posts) {
       entries.push({ loc: articleUrl(base, post), lastmod: post.updatedAt })
     }
     // Only non-empty taxonomy pages are worth indexing.

@@ -293,21 +293,39 @@ describe('post read repository', () => {
     expect(page2.nextCursor).toBeNull()
   })
 
-  it('lists published posts for feeds, including pages, newest first, excluding drafts', async () => {
+  it('lists scoped feed posts with SQL limits and SEO metadata for RSS', async () => {
     const { repository } = setup()
 
-    const feed = await repository.listFeedPosts()
-
-    expect(feed.map((post) => [post.slug, post.type])).toEqual([
+    const sitemap = await repository.listFeedPosts({ scope: 'sitemap' })
+    expect(sitemap.map((post) => [post.slug, post.type])).toEqual([
       ['a', 'article'],
       ['b', 'article'],
       ['c', 'article'],
       ['about', 'page']
     ])
-    expect(feed.map((post) => post.slug)).not.toContain('dr')
+    expect(sitemap.map((post) => post.slug)).not.toContain('dr')
 
-    const first = feed[0]
-    expect(first).toMatchObject({ slug: 'a', title: 'A', excerpt: 'Excerpt A', type: 'article', publishedAt: JUN })
+    const limitedArticles = await repository.listFeedPosts({ scope: 'articles', limit: 2 })
+    expect(limitedArticles.map((post) => post.slug)).toEqual(['a', 'b'])
+    expect(limitedArticles.every((post) => post.type === 'article')).toBe(true)
+
+    const first = limitedArticles[0]
+    expect(first).toMatchObject({
+      slug: 'a',
+      title: 'A',
+      excerpt: 'Excerpt A',
+      seoTitle: 'SEO A',
+      seoDescription: 'SEO desc A',
+      type: 'article',
+      publishedAt: JUN
+    })
     expect(first.updatedAt).toBeInstanceOf(Date)
+
+    // Articles without a metadata row still return null SEO fields.
+    expect(limitedArticles[1]).toMatchObject({
+      slug: 'b',
+      seoTitle: null,
+      seoDescription: null
+    })
   })
 })

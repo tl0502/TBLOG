@@ -55,16 +55,29 @@ export interface PublicPostDetailSource extends PublicPostListItem, PublicPostSe
 }
 
 /**
- * Minimal published-post projection for feeds and the sitemap: articles and pages, newest first.
- * `updatedAt` feeds sitemap `lastmod`; `title`/`excerpt` feed RSS item title and description.
+ * Minimal published-post projection for feeds and the sitemap.
+ * `updatedAt` feeds sitemap `lastmod`; RSS prefers `seoTitle`/`seoDescription` then title/excerpt.
  */
 export interface FeedPostRef {
   slug: string
   title: string
   excerpt: string | null
+  seoTitle: string | null
+  seoDescription: string | null
   type: PostType
   publishedAt: Date
   updatedAt: Date
+}
+
+/** Bounded feed/sitemap query so RSS does not load every published row into memory. */
+export interface FeedPostQuery {
+  /**
+   * `articles`: published articles only (RSS).
+   * `sitemap`: published articles plus the About page (public sitemap surface).
+   */
+  scope: 'articles' | 'sitemap'
+  /** Optional SQL LIMIT; omit for the full sitemap set. */
+  limit?: number
 }
 
 export interface PublicCategory {
@@ -133,8 +146,11 @@ export interface PostReadRepository {
     query: PublicListQuery
   ): Promise<PublicListPage<PublicPostListItem>>
   listArchive(): Promise<ArchiveGroup[]>
-  /** All published posts (articles and pages), newest first, for RSS and the sitemap. */
-  listFeedPosts(): Promise<FeedPostRef[]>
+  /**
+   * Published posts for syndication. `scope: 'articles'` powers RSS (optional LIMIT);
+   * `scope: 'sitemap'` returns articles plus the About page only.
+   */
+  listFeedPosts(query: FeedPostQuery): Promise<FeedPostRef[]>
   /** Current published article ids used to reconcile stale external report rankings. */
   listPublishedArticleIds(): Promise<string[]>
   listPublishedArticlesByIds(ids: string[]): Promise<PublicPostListItem[]>
