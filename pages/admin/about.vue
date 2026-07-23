@@ -12,8 +12,6 @@ import {
   previewMarkdown as renderAdminPreview,
   updatePost,
   type AdminPostEditView,
-  type AdminPostListItemView,
-  type AdminPostListMeta,
   type AdminPostStatus,
   type UpdatePostBody
 } from '~/composables/useAdminApi'
@@ -33,15 +31,8 @@ interface AboutPostLoadResult {
 
 const { data, error } = await useAsyncData<AboutPostLoadResult>('admin-about-post', async () => {
   const requestFetch = useRequestFetch()
-  // Singleton About page: one paged list call (slug + limit=1) then one edit fetch when present.
-  // Reuses the list endpoint instead of a dedicated by-slug route so filters stay in one place.
-  const listed = await requestFetch<Envelope<AdminPostListItemView[], AdminPostListMeta>>(
-    '/api/v1/admin/posts',
-    { query: { slug: 'about', limit: 1, offset: 0 } }
-  )
-  const summary = listed.data[0]
-  if (!summary) return { post: null }
-  const response = await requestFetch<Envelope<AdminPostEditView>>(`/api/v1/admin/posts/${summary.id}`)
+  // Single-fetch by slug: missing About is a valid empty editor (data: null), not a 404.
+  const response = await requestFetch<Envelope<AdminPostEditView | null>>('/api/v1/admin/posts/by-slug/about')
   return { post: response.data ?? null }
 })
 

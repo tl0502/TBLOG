@@ -244,6 +244,7 @@ export const siteSettings = sqliteTable('site_settings', {
   siteName: text('site_name').notNull(),
   description: text('description'),
   logoUrl: text('logo_url'),
+  faviconUrl: text('favicon_url'),
   featuredFallbackCover: text('featured_fallback_cover'),
   lightTheme: text('light_theme', { enum: siteLightThemeValues }).notNull().default('default'),
   navigationJson: text('navigation_json'),

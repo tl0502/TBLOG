@@ -12,7 +12,20 @@ Install dependencies and start the Nuxt development server:
 
 ```powershell
 pnpm install
+pnpm secrets:local   # writes gitignored .env + .dev.vars with valid SESSION_SECRET
 pnpm dev
+```
+
+`pnpm dev` and `pnpm preview` also run `secrets:local` automatically when the secret
+files are missing. Nuxt reads `.env`; Wrangler local preview reads `.dev.vars`. Both
+files are gitignored — never commit real secrets.
+
+Load demo content into the **local** D1 database (categories, tags, articles, About,
+comments). Requires migrations applied and an administrator from `/admin/setup`:
+
+```powershell
+pnpm drizzle:migrate:local
+pnpm seed:local
 ```
 
 Run the checks:

@@ -119,10 +119,37 @@ const socialLinkSchema = z.object({
   url: z.string().trim().min(1).max(2048)
 })
 
+/** Favicon may be an absolute HTTP(S) URL or a same-origin root-relative path such as `/favicon.ico`. */
+const faviconUrlText = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z
+    .string()
+    .trim()
+    .max(2048)
+    .nullable()
+    .refine(
+      (value) => {
+        if (value === null) return true
+        if (value.startsWith('/') && !value.startsWith('//')) {
+          return isSafeRootRelativeUrl(value)
+        }
+        if (!/^https?:\/\//i.test(value)) return false
+        try {
+          const url = new URL(value)
+          return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0
+        } catch {
+          return false
+        }
+      },
+      { message: 'Must be an absolute HTTP(S) URL or a root-relative path (e.g. /favicon.ico)' }
+    )
+)
+
 export const siteSettingsInputSchema = z.object({
   siteName: z.string().trim().min(1).max(100),
   description: nullableText(500).optional().default(null),
   logoUrl: urlText().nullable().optional().default(null),
+  faviconUrl: faviconUrlText.optional().default(null),
   featuredFallbackCover: nullableAbsoluteHttpUrlText().optional().default(null),
   lightTheme: z.enum(siteLightThemeValues).optional().default('default'),
   navigation: z.array(navigationItemSchema).max(50).optional().default([]),

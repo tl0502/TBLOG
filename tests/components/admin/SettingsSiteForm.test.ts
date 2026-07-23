@@ -8,6 +8,8 @@ function siteValue(overrides: Partial<SiteSettings> = {}): SiteSettings {
     siteName: 'TBLOG',
     description: null,
     logoUrl: null,
+    faviconUrl: null,
+    featuredFallbackCover: null,
     lightTheme: 'default',
     navigation: [],
     locale: 'zh-CN',
@@ -56,6 +58,11 @@ describe('SettingsSiteForm', () => {
 
     await wrapper.get('[data-test="site-name"]').setValue('New name')
     expect(value.siteName).toBe('New name')
+
+    await wrapper.get('[data-test="site-favicon"]').setValue('https://cdn.example/favicon.ico')
+    expect(value.faviconUrl).toBe('https://cdn.example/favicon.ico')
+    await wrapper.get('[data-test="site-favicon"]').setValue('  ')
+    expect(value.faviconUrl).toBeNull()
   })
 
   it('lets administrators select Atelier without exposing Nocturne as a site setting', async () => {

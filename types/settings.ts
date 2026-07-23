@@ -25,6 +25,8 @@ export interface SiteSettings {
   siteName: string
   description: string | null
   logoUrl: string | null
+  /** Absolute HTTP(S) or site-root path (e.g. `/favicon.ico`) used as the browser tab icon. */
+  faviconUrl: string | null
   featuredFallbackCover?: string | null
   lightTheme: SiteLightTheme
   navigation: NavigationItem[]

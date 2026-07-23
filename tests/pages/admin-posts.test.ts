@@ -129,7 +129,7 @@ describe('admin posts page', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it('removes a deleted post locally without refreshing the post list', async () => {
+  it('removes a deleted post locally without refreshing when the catalogue is empty', async () => {
     const refresh = vi.fn()
     api.useAdminPosts.mockResolvedValueOnce({
       data: shallowRef({ data: [{ id: 'post-1', slug: 'hello', title: 'Hello', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, tagIds: [] }], meta: { total: 1, offset: 0, limit: 25 } }),
@@ -143,6 +143,26 @@ describe('admin posts page', () => {
 
     expect(wrapper.get('[data-test="post-count"]').text()).toBe('0')
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('refetches when deleting the last row on a page that still has more matches', async () => {
+    const refresh = vi.fn()
+    api.useAdminPosts.mockResolvedValueOnce({
+      data: shallowRef({
+        data: [{ id: 'post-26', slug: 'tail', title: 'Tail', type: 'article', status: 'draft', featured: false, updatedAt: '2026-07-20', publishedAt: null, tagIds: [] }],
+        meta: { total: 26, offset: 25, limit: 25 }
+      }),
+      error: shallowRef(null),
+      pending: shallowRef(false),
+      refresh
+    })
+    api.deletePost.mockResolvedValueOnce({ data: { id: 'post-26' }, meta: {} })
+    const wrapper = await mountPage()
+
+    await wrapper.get('[data-test="stub-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(refresh).toHaveBeenCalledOnce()
   })
 
   it('does not report a successful delete as failed when integration refresh rejects', async () => {

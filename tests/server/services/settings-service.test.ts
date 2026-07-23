@@ -254,6 +254,7 @@ describe('settings service', () => {
       siteName: 'Public Blog',
       description: null,
       logoUrl: null,
+      faviconUrl: null,
       featuredFallbackCover: null,
       lightTheme: 'atelier',
       navigation: [{ label: 'Home', href: '/' }],

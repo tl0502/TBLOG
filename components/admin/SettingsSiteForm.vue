@@ -41,6 +41,21 @@ function removeSocialLink(index: number) {
     </label>
 
     <label class="settings-field">
+      <span class="settings-field__label">{{ t('settings.faviconUrl') }}</span>
+      <input
+        :value="value.faviconUrl ?? ''"
+        data-test="site-favicon"
+        class="settings-field__input"
+        :placeholder="t('settings.faviconUrlPlaceholder')"
+        @input="value.faviconUrl = (($event.target as HTMLInputElement).value.trim() || null)"
+      >
+      <span class="admin-muted">{{ t('settings.faviconUrlHint') }}</span>
+      <span v-if="err(['faviconUrl'])" class="settings-field__error" data-test="site-favicon-error">
+        {{ err(['faviconUrl']) }}
+      </span>
+    </label>
+
+    <label class="settings-field">
       <span class="settings-field__label">精选文章兜底封面</span>
       <input v-model="value.featuredFallbackCover" data-test="site-featured-fallback-cover" class="settings-field__input" placeholder="https://...">
       <span class="admin-muted">精选文章没有封面图时使用，仅支持 HTTP(S) 图片 URL。R2 Storage 启用后可使用 R2 返回的公开 URL。</span>

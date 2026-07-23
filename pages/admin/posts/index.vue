@@ -117,16 +117,23 @@ function handleDelete(id: string) {
   noticeMessage.value = ''
   queuePostAction(id, async () => {
     await deletePost(id)
-    if (data.value) {
-      data.value = {
-        ...data.value,
-        data: data.value.data.filter((post) => post.id !== id),
-        meta: {
-          ...data.value.meta,
-          total: Math.max(0, (data.value.meta.total ?? 1) - 1)
-        }
+    if (!data.value) {
+      await refresh()
+      return
+    }
+    const remaining = data.value.data.filter((post) => post.id !== id)
+    const nextTotal = Math.max(0, (data.value.meta.total ?? 1) - 1)
+    data.value = {
+      ...data.value,
+      data: remaining,
+      meta: {
+        ...data.value.meta,
+        total: nextTotal
       }
-    } else {
+    }
+    // Empty page but matches remain (e.g. last row on page 2+): refetch so offset clamp
+    // can load the previous page instead of flashing "no posts" with total > 0.
+    if (remaining.length === 0 && nextTotal > 0) {
       await refresh()
     }
   }, t('admin.deletePostError'))

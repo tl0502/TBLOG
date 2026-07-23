@@ -28,13 +28,22 @@ onMounted(() => {
   }
 })
 
+const faviconHref = computed(() => publicSiteConfig.value?.data.site.faviconUrl?.trim() || null)
+
 useHead(() => ({
   htmlAttrs: {
     lang: locale.value,
     'data-color-mode': preference.value,
     'data-theme': resolvedTheme.value,
     'data-light-theme': lightTheme.value
-  }
+  },
+  // Only emit when configured so browsers can still fall back to /favicon.ico by default.
+  link: faviconHref.value
+    ? [
+        { rel: 'icon', href: faviconHref.value, key: 'site-favicon' },
+        { rel: 'shortcut icon', href: faviconHref.value, key: 'site-shortcut-icon' }
+      ]
+    : []
 }))
 </script>
 

@@ -153,6 +153,7 @@ export interface PublicSiteConfigView {
     siteName: string
     description: string | null
     logoUrl: string | null
+    faviconUrl: string | null
     featuredFallbackCover: string | null
     lightTheme: SiteLightTheme
     navigation: { label: string; href: string }[]

@@ -43,6 +43,7 @@ export function useSeoContext() {
   const locale = computed(() => config.value?.site.locale ?? 'zh-CN')
   const robotsPolicy = computed(() => config.value?.seo.robotsPolicy ?? 'index,follow')
   const logoUrl = computed(() => config.value?.site.logoUrl ?? null)
+  const faviconUrl = computed(() => config.value?.site.faviconUrl ?? null)
   const baseUrl = computed(() =>
     resolveClientBaseUrl(config.value?.seo.canonicalBaseUrl ?? null, runtimeConfig.public.siteUrl)
   )
@@ -70,6 +71,7 @@ export function useSeoContext() {
     locale,
     robotsPolicy,
     logoUrl,
+    faviconUrl,
     baseUrl,
     canonicalFor,
     toAbsolute

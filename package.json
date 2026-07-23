@@ -4,9 +4,11 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "dev": "node scripts/generate-migrations-manifest.mjs && nuxt dev",
+    "dev": "node scripts/ensure-local-secrets.mjs && node scripts/generate-migrations-manifest.mjs && nuxt dev",
     "build": "node scripts/generate-migrations-manifest.mjs && nuxt build && nuxt prepare",
-    "preview": "wrangler dev --config wrangler.local.jsonc",
+    "preview": "node scripts/ensure-local-secrets.mjs && wrangler dev --config wrangler.local.jsonc",
+    "secrets:local": "node scripts/ensure-local-secrets.mjs",
+    "seed:local": "node scripts/seed-local-content.mjs",
     "deploy": "wrangler deploy",
     "generate:migrations": "node scripts/generate-migrations-manifest.mjs",
     "types:cloudflare": "node scripts/cloudflare-types.mjs",

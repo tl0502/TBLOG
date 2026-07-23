@@ -34,6 +34,8 @@ describe('public site-config route', () => {
         siteName: 'Blog',
         description: null,
         logoUrl: null,
+        faviconUrl: null,
+        featuredFallbackCover: null,
         lightTheme: 'default',
         navigation: [],
         socialLinks: [],

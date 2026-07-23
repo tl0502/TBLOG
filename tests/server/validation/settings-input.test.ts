@@ -99,6 +99,18 @@ describe('settings URL input validation', () => {
     expect(() => siteSettingsInputSchema.parse({ siteName: 'TBLOG', lightTheme: 'system' }))
       .toThrow()
   })
+
+  it('accepts absolute or root-relative favicon URLs and rejects unsafe values', () => {
+    expect(siteSettingsInputSchema.parse({ siteName: 'TBLOG' }).faviconUrl).toBeNull()
+    expect(siteSettingsInputSchema.parse({ siteName: 'TBLOG', faviconUrl: 'https://cdn.example/icon.png' }).faviconUrl)
+      .toBe('https://cdn.example/icon.png')
+    expect(siteSettingsInputSchema.parse({ siteName: 'TBLOG', faviconUrl: '/favicon.ico' }).faviconUrl)
+      .toBe('/favicon.ico')
+    expect(siteSettingsInputSchema.parse({ siteName: 'TBLOG', faviconUrl: '   ' }).faviconUrl).toBeNull()
+    expect(() => siteSettingsInputSchema.parse({ siteName: 'TBLOG', faviconUrl: 'javascript:alert(1)' })).toThrow()
+    expect(() => siteSettingsInputSchema.parse({ siteName: 'TBLOG', faviconUrl: '//evil.example/x.ico' })).toThrow()
+  })
+
   it('accepts only the safe robots policy presets', () => {
     expect(seoSettingsInputSchema.parse({ robotsPolicy: 'noindex,nofollow' }).robotsPolicy)
       .toBe('noindex,nofollow')

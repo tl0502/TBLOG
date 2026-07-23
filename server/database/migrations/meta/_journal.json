@@ -218,6 +218,13 @@
       "when": 1784492661699,
       "tag": "0030_mysterious_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1784840000031,
+      "tag": "0031_site_favicon_url",
+      "breakpoints": true
     }
   ]
 }

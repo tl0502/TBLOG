@@ -155,6 +155,7 @@ export const settingsDefaults: SettingsByDomain = {
     siteName: 'TBLOG',
     description: null,
     logoUrl: null,
+    faviconUrl: null,
     featuredFallbackCover: null,
     lightTheme: 'default',
     navigation: [],
@@ -223,6 +224,7 @@ export interface PublicSiteConfig {
     siteName: string
     description: string | null
     logoUrl: string | null
+    faviconUrl: string | null
     featuredFallbackCover: string | null
     lightTheme: SiteLightTheme
     navigation: NavigationItem[]
@@ -288,12 +290,19 @@ export function toPublicSiteConfig(input: {
 }): PublicSiteConfig {
   const fallbackCover = input.site.featuredFallbackCover
   const safeFallbackCover = fallbackCover && /^https?:\/\//i.test(fallbackCover) ? fallbackCover : null
+  const rawFavicon = input.site.faviconUrl?.trim() || null
+  const safeFavicon = rawFavicon && (
+    /^https?:\/\//i.test(rawFavicon) || (rawFavicon.startsWith('/') && !rawFavicon.startsWith('//'))
+  )
+    ? rawFavicon
+    : null
   const profile = toPublicProfile(input.profile)
   return {
     site: {
       siteName: input.site.siteName,
       description: input.site.description,
       logoUrl: input.site.logoUrl,
+      faviconUrl: safeFavicon,
       featuredFallbackCover: safeFallbackCover,
       lightTheme: input.site.lightTheme,
       navigation: input.site.navigation,

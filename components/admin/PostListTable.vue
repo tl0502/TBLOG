@@ -130,6 +130,9 @@ const emptyBecauseFilter = computed(() =>
   props.total === 0
   && (props.search.trim().length > 0 || props.status !== 'all' || props.tagId.length > 0)
 )
+// Only treat as empty catalogue when the server match set is zero. An empty page with total > 0
+// is a transient window (delete/offset clamp/refetch), not "no posts".
+const isCatalogueEmpty = computed(() => props.total === 0 && props.posts.length === 0)
 
 function toggleVisible(selected: boolean) {
   selectedIds.value = selected ? pagePosts.value.slice(0, 20).map((post) => post.id) : []
@@ -191,9 +194,9 @@ watch([() => props.search, () => props.status, () => props.tagId, () => props.of
       </label>
     </div>
 
-    <p v-if="posts.length === 0 && emptyBecauseFilter" class="post-list__empty">{{ t('posts.noMatches') }}</p>
-    <p v-else-if="posts.length === 0" class="post-list__empty">{{ t('posts.empty') }}</p>
-    <template v-else>
+    <p v-if="isCatalogueEmpty && emptyBecauseFilter" class="post-list__empty">{{ t('posts.noMatches') }}</p>
+    <p v-else-if="isCatalogueEmpty" class="post-list__empty">{{ t('posts.empty') }}</p>
+    <template v-else-if="posts.length > 0">
     <div class="post-list__bulk" data-test="post-bulk-toolbar">
       <div class="post-list__bulk-summary">
         <span>{{ t('posts.batchActions') }}</span>
