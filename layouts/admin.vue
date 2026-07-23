@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import AdminShell from '~/components/admin/AdminShell.vue'
 import {
   adminLogout,
-  useAdminCommentCounts,
+  type DashboardMetricsView,
+  useLazyAdminCommentCounts,
   useAdminSessionSnapshot
 } from '~/composables/useAdminApi'
+import type { Envelope } from '~/composables/usePublicApi'
 
 const route = useRoute()
 const adminSession = useAdminSessionSnapshot()
-const { data: commentCountData } = useAdminCommentCounts()
+const { data: dashboardData } = useNuxtData<Envelope<DashboardMetricsView>>('admin-dashboard-metrics')
+const { data: commentCountData, execute: loadCommentCount } = useLazyAdminCommentCounts()
 
 const adminName = computed(() => adminSession.value?.administrator.username ?? '')
-const pendingComments = computed(() => commentCountData.value?.data.pending ?? 0)
+const pendingComments = computed(() =>
+  dashboardData.value?.data.pendingComments ?? commentCountData.value?.data.pending ?? 0
+)
 const activeKey = computed(() => {
   if (route.path === '/admin') {
     return 'dashboard'
@@ -45,6 +50,15 @@ async function handleSignOut() {
   await adminLogout()
   await navigateTo('/admin/login')
 }
+
+async function ensureCommentCount() {
+  if (route.path !== '/admin' && !dashboardData.value && !commentCountData.value) {
+    await loadCommentCount()
+  }
+}
+
+onMounted(() => { void ensureCommentCount() })
+watch(() => route.path, () => { void ensureCommentCount() })
 </script>
 
 <template>

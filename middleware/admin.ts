@@ -20,8 +20,10 @@ function isSessionConfigurationError(error: unknown): boolean {
   return code === 'missing_session_secret' || code === 'invalid_session_secret'
 }
 
-// Client auth gate for /admin/** routes. Protected routes probe the authoritative session first;
-// only an unauthorized response may fall back to first-run detection.
+// Client auth gate for /admin/** routes. Protected routes always probe the authoritative session;
+// only an unauthorized response may fall back to first-run detection. The hydrated UI snapshot is
+// presentation state and must not be trusted as an authorization decision because it can outlive a
+// database reset, session-secret rotation, or session revocation in a restored browser page.
 export default defineNuxtRouteMiddleware(async (to) => {
   const requestedRedirect = typeof to.query.redirect === 'string'
     && to.query.redirect.startsWith('/admin')
@@ -46,12 +48,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
       // Both pages remain reachable during a setup-status outage. Their write endpoints still
       // enforce whether setup or login is valid.
     }
-    return
-  }
-
-  const nuxtApp = useNuxtApp()
-  const sessionSnapshot = useAdminSessionSnapshot()
-  if (nuxtApp.isHydrating && nuxtApp.payload.serverRendered && sessionSnapshot.value) {
     return
   }
 

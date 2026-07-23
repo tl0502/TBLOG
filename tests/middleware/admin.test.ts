@@ -43,7 +43,7 @@ describe('admin route middleware', () => {
     expect(fetchAdminSetupStatus).not.toHaveBeenCalled()
   })
 
-  it('reuses a server-rendered snapshot during client hydration only', async () => {
+  it('revalidates a server-rendered snapshot during client hydration', async () => {
     vi.stubGlobal('useNuxtApp', () => ({ isHydrating: true, payload: { serverRendered: true } }))
     vi.stubGlobal('useAdminSessionSnapshot', () => shallowRef({
       administrator: { username: 'editor' }, permissions: ['posts:read']
@@ -51,9 +51,27 @@ describe('admin route middleware', () => {
 
     await (adminMiddleware as never as (to: Route) => Promise<unknown>)(route('/admin/posts'))
 
-    expect(fetchAdminMe).not.toHaveBeenCalled()
+    expect(fetchAdminMe).toHaveBeenCalledOnce()
     expect(fetchAdminSetupStatus).not.toHaveBeenCalled()
-    expect(setAdminSessionSnapshot).not.toHaveBeenCalled()
+    expect(setAdminSessionSnapshot).toHaveBeenCalledOnce()
+  })
+
+  it('does not trust a stale hydration snapshot after the session is gone', async () => {
+    vi.stubGlobal('useNuxtApp', () => ({ isHydrating: true, payload: { serverRendered: true } }))
+    vi.stubGlobal('useAdminSessionSnapshot', () => shallowRef({
+      administrator: { username: 'editor' }, permissions: ['posts:read']
+    }))
+    vi.stubGlobal('fetchAdminMe', vi.fn().mockRejectedValue({
+      statusCode: 401,
+      data: { error: { code: 'unauthorized' } }
+    }))
+    vi.stubGlobal('fetchAdminSetupStatus', vi.fn().mockResolvedValue({ data: { required: true } }))
+
+    await (adminMiddleware as never as (to: Route) => Promise<unknown>)(route('/admin/posts'))
+
+    expect(fetchAdminMe).toHaveBeenCalledOnce()
+    expect(clearAdminSessionSnapshot).toHaveBeenCalledOnce()
+    expect(navigateTo).toHaveBeenCalledWith('/admin/setup?redirect=%2Fadmin%2Fposts')
   })
 
   it('routes a fresh deployment to setup while allowing the setup page itself', async () => {

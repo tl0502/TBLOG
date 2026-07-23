@@ -535,6 +535,15 @@ export function useAdminCommentCounts() {
   })
 }
 
+/** Non-critical sidebar badge read. It starts only when the Admin layout explicitly executes it. */
+export function useLazyAdminCommentCounts() {
+  return useLazyFetch<Envelope<{ pending: number }>>('/api/v1/admin/comments/counts', {
+    key: 'admin-comment-counts',
+    server: false,
+    immediate: false
+  })
+}
+
 export function moderateComment(id: string, status: Exclude<AdminCommentStatus, 'pending'>) {
   return $fetch<Envelope<{ id: string; status: Exclude<AdminCommentStatus, 'pending'> }>>(
     `/api/v1/admin/comments/${id}`,
