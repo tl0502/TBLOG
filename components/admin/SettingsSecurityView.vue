@@ -294,6 +294,7 @@ onMounted(() => loadAttempts())
               <code class="security-secret">{{ setupSecret }}</code>
             </div>
           </div>
+          <p class="admin-muted" data-test="security-two-factor-enable-hint">{{ t('security.confirmTwoFactorHint') }}</p>
           <label class="settings-field">
             <span class="settings-field__label">{{ t('security.currentPassword') }}</span>
             <input v-model="enablePassword" class="settings-field__input" type="password" autocomplete="current-password" required />

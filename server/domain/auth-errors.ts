@@ -9,6 +9,7 @@ export type AuthErrorCode =
   | 'invalid_two_factor'
   | 'two_factor_unavailable'
   | 'two_factor_not_pending'
+  | 'two_factor_already_enabled'
   | 'two_factor_not_enabled'
   | 'ip_access_denied'
   | 'ip_self_lockout'

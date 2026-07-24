@@ -153,7 +153,7 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
       await requireCurrentPassword(current.administrator.id, currentPassword)
       const existing = await dependencies.securityRepository.getTwoFactor(current.administrator.id)
       if (existing?.enabledAt) {
-        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+        throw authError('two_factor_already_enabled', 'Two-factor authentication is already enabled', 409)
       }
       const secret = generateTotpSecret()
       const encrypted = await encryptAdminSecret(secret, requireEncryptionKey())
@@ -164,7 +164,7 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
         now: now()
       })
       if (!saved) {
-        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+        throw authError('two_factor_already_enabled', 'Two-factor authentication is already enabled', 409)
       }
       return {
         secret,
@@ -180,7 +180,7 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
       await requireCurrentPassword(current.administrator.id, input.currentPassword)
       const pending = await loadTwoFactorSecret(current.administrator.id)
       if (pending.enabled) {
-        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+        throw authError('two_factor_already_enabled', 'Two-factor authentication is already enabled', 409)
       }
       if (!(await verifyTotpCode(pending.secret, input.code, now()))) {
         throw authError('invalid_two_factor', 'The authentication code is invalid', 401)
@@ -196,7 +196,7 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
         recoveryCodes: recoveryRecords
       })
       if (!enabled) {
-        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+        throw authError('two_factor_already_enabled', 'Two-factor authentication is already enabled', 409)
       }
       return { recoveryCodes }
     },

@@ -130,6 +130,7 @@ describe('SettingsSecurityView', () => {
     await startForm.trigger('submit')
     await flushPromises()
     const setupForm = wrapper.get('[data-test="security-two-factor-enable"]')
+    expect(wrapper.get('[data-test="security-two-factor-enable-hint"]').text().length).toBeGreaterThan(0)
     const enableInputs = setupForm.findAll('input')
     await enableInputs[0].setValue('correct horse battery staple')
     await enableInputs[1].setValue('123456')

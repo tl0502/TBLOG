@@ -109,7 +109,7 @@ describe('admin security service', () => {
     expect(enabled.recoveryCodes.length).toBeGreaterThan(0)
 
     await expect(security.startTwoFactor(current, 'correct horse battery staple'))
-      .rejects.toMatchObject({ code: 'two_factor_not_pending' })
+      .rejects.toMatchObject({ code: 'two_factor_already_enabled' })
 
     // Simulate a racing savePending that loses the service-layer enabled check.
     const wiped = await securityRepository.savePendingTwoFactor({
