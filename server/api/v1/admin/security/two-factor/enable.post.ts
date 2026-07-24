@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   try {
     const current = await requireAdmin(event)
     const input = enableTwoFactorSchema.parse(await readBody(event))
-    return ok(await createAdminSecurityServiceForEvent(event).enableTwoFactor(current, input.code))
+    return ok(await createAdminSecurityServiceForEvent(event).enableTwoFactor(current, input))
   } catch (error) {
     const mapped = error instanceof ZodError
       ? authError('validation_failed', 'Invalid two-factor confirmation', 422, { issues: error.issues })

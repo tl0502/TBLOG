@@ -117,6 +117,11 @@ describe('SettingsSecurityView', () => {
     })
     api.enableAdminTwoFactor.mockResolvedValue({ data: { recoveryCodes: ['ABCD-EFGH', 'JKLM-NPQR'] } })
     refresh.mockRejectedValueOnce(new Error('refresh failed'))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    })
     const wrapper = mount(SettingsSecurityView)
     await flushPromises()
 
@@ -124,12 +129,17 @@ describe('SettingsSecurityView', () => {
     await startForm.get('input').setValue('correct horse battery staple')
     await startForm.trigger('submit')
     await flushPromises()
-    const setupForm = wrapper.findAll('form').find((form) => form.find('input[autocomplete="one-time-code"]').exists())
-    expect(setupForm).toBeDefined()
-    await setupForm!.get('input[autocomplete="one-time-code"]').setValue('123456')
-    await setupForm!.trigger('submit')
+    const setupForm = wrapper.get('[data-test="security-two-factor-enable"]')
+    const enableInputs = setupForm.findAll('input')
+    await enableInputs[0].setValue('correct horse battery staple')
+    await enableInputs[1].setValue('123456')
+    await setupForm.trigger('submit')
     await flushPromises()
 
+    expect(api.enableAdminTwoFactor).toHaveBeenCalledWith({
+      currentPassword: 'correct horse battery staple',
+      code: '123456'
+    })
     expect(wrapper.text()).toContain('双重认证已开启')
     expect(wrapper.text()).toContain('ABCD-EFGH')
     expect(wrapper.text()).toContain('JKLM-NPQR')
@@ -137,6 +147,24 @@ describe('SettingsSecurityView', () => {
     expect(wrapper.get('[data-test="security-recovery-codes"]').isVisible()).toBe(true)
     expect(wrapper.find('.security-status--on').exists()).toBe(true)
     expect(wrapper.get('[data-test="security-refresh-error"]').text()).toContain('操作已成功')
+
+    await wrapper.get('[data-test="security-copy-recovery"]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('ABCD-EFGH\nJKLM-NPQR')
+    expect(wrapper.get('[data-test="security-recovery-copy-message"]').text()).toContain('已复制')
+  })
+
+  it('refreshes the overview after saving IP rules', async () => {
+    const wrapper = mount(SettingsSecurityView)
+    await flushPromises()
+
+    const ipForm = wrapper.get('[data-test="security-ip-form"]')
+    await ipForm.findAll('textarea')[0].setValue('192.0.2.1')
+    await ipForm.trigger('submit')
+    await flushPromises()
+
+    expect(api.replaceAdminIpRules).toHaveBeenCalledWith({ allow: ['192.0.2.1'], deny: [] })
+    expect(refresh).toHaveBeenCalled()
   })
 
   it('treats a resolved refresh with a read error as a refresh warning', async () => {

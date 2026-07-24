@@ -176,7 +176,7 @@ describe('useAdminApi', () => {
 
     await updateAdminAccount({ currentPassword: 'current', username: 'owner' })
     await startAdminTwoFactor('current')
-    await enableAdminTwoFactor('123456')
+    await enableAdminTwoFactor({ currentPassword: 'current', code: '123456' })
     await disableAdminTwoFactor({ currentPassword: 'current', secondFactor: '123456' })
     await replaceAdminIpRules({ allow: ['192.0.2.1'], deny: [] })
     await fetchAdminLoginAttempts(25, 25)
@@ -188,7 +188,7 @@ describe('useAdminApi', () => {
       method: 'POST', body: { currentPassword: 'current' }
     })
     expect($fetch).toHaveBeenNthCalledWith(3, '/api/v1/admin/security/two-factor/enable', {
-      method: 'POST', body: { code: '123456' }
+      method: 'POST', body: { currentPassword: 'current', code: '123456' }
     })
     expect($fetch).toHaveBeenNthCalledWith(4, '/api/v1/admin/security/two-factor', {
       method: 'DELETE', body: { currentPassword: 'current', secondFactor: '123456' }

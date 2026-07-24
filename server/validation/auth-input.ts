@@ -1,12 +1,12 @@
 import { z } from 'zod'
 
 export const setupAdminInputSchema = z.object({
-  username: z.string().trim().min(3).max(64),
+  username: z.string().trim().min(3).max(64).transform((value) => value.toLowerCase()),
   password: z.string().min(12).max(256)
 })
 
 export const loginInputSchema = z.object({
-  username: z.string().trim().min(1).max(64),
+  username: z.string().trim().min(1).max(64).transform((value) => value.toLowerCase()),
   password: z.string().min(1).max(256),
   secondFactor: z.string().trim().min(6).max(32).optional()
 })

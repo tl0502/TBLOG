@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 export const updateAdministratorAccountSchema = z.object({
   currentPassword: z.string().min(1).max(256),
-  username: z.string().trim().min(3).max(64).optional(),
+  username: z.string().trim().min(3).max(64).transform((value) => value.toLowerCase()).optional(),
   password: z.string().min(12).max(256).optional()
 }).refine((value) => value.username !== undefined || value.password !== undefined, {
   message: 'Username or password is required'
@@ -13,6 +13,7 @@ export const startTwoFactorSchema = z.object({
 })
 
 export const enableTwoFactorSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
   code: z.string().trim().regex(/^\d{6}$/)
 })
 

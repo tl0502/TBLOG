@@ -123,8 +123,9 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
           )
         }
       }
-      if (input.username && input.username !== administrator.username) {
-        const existing = await dependencies.administratorRepository.findByUsername(input.username)
+      const nextUsername = input.username?.trim().toLowerCase()
+      if (nextUsername && nextUsername !== administrator.username.toLowerCase()) {
+        const existing = await dependencies.administratorRepository.findByUsername(nextUsername)
         if (existing && existing.id !== administrator.id) {
           throw authError('username_conflict', 'Username is already in use', 409)
         }
@@ -133,16 +134,16 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
         const currentTokenHash = await hashSessionToken(sessionToken, dependencies.sessionSecret)
         await dependencies.securityRepository.updateCredentialsAndDeleteOtherSessions({
           adminId: administrator.id,
-          username: input.username,
+          username: nextUsername,
           passwordHash: await hashPassword(input.password),
           currentTokenHash,
           updatedAt: now()
         })
-        return { id: administrator.id, username: input.username ?? administrator.username }
+        return { id: administrator.id, username: nextUsername ?? administrator.username }
       }
       return dependencies.administratorRepository.updateCredentials({
         id: administrator.id,
-        username: input.username,
+        username: nextUsername,
         updatedAt: now()
       })
     },
@@ -156,25 +157,32 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
       }
       const secret = generateTotpSecret()
       const encrypted = await encryptAdminSecret(secret, requireEncryptionKey())
-      await dependencies.securityRepository.savePendingTwoFactor({
+      const saved = await dependencies.securityRepository.savePendingTwoFactor({
         adminId: current.administrator.id,
         secretCiphertext: encrypted.ciphertext,
         secretIv: encrypted.iv,
         now: now()
       })
+      if (!saved) {
+        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+      }
       return {
         secret,
         otpauthUri: createTotpUri(current.administrator.username, secret)
       }
     },
 
-    async enableTwoFactor(current: CurrentAdministratorResult, code: string) {
+    async enableTwoFactor(
+      current: CurrentAdministratorResult,
+      input: { currentPassword: string; code: string }
+    ) {
       requireUserPermission(current)
+      await requireCurrentPassword(current.administrator.id, input.currentPassword)
       const pending = await loadTwoFactorSecret(current.administrator.id)
       if (pending.enabled) {
         throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
       }
-      if (!(await verifyTotpCode(pending.secret, code, now()))) {
+      if (!(await verifyTotpCode(pending.secret, input.code, now()))) {
         throw authError('invalid_two_factor', 'The authentication code is invalid', 401)
       }
       const recoveryCodes = generateRecoveryCodes()
@@ -182,11 +190,14 @@ export function createAdminSecurityService(dependencies: AdminSecurityServiceDep
         id: crypto.randomUUID(),
         codeHash: await hashRecoveryCode(value, requireEncryptionKey())
       })))
-      await dependencies.securityRepository.enableTwoFactor({
+      const enabled = await dependencies.securityRepository.enableTwoFactor({
         adminId: current.administrator.id,
         enabledAt: now(),
         recoveryCodes: recoveryRecords
       })
+      if (!enabled) {
+        throw authError('two_factor_not_pending', 'Two-factor authentication is already enabled', 409)
+      }
       return { recoveryCodes }
     },
 

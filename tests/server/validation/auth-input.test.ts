@@ -1,9 +1,9 @@
 import { loginInputSchema, setupAdminInputSchema } from '../../../server/validation/auth-input'
 
 describe('auth input validation', () => {
-  it('accepts and trims first administrator setup input', () => {
+  it('accepts, trims, and lowercases first administrator setup input', () => {
     expect(setupAdminInputSchema.parse({
-      username: ' admin ',
+      username: ' Admin ',
       password: 'correct horse battery staple'
     })).toEqual({
       username: 'admin',
@@ -18,9 +18,9 @@ describe('auth input validation', () => {
     })).toThrow()
   })
 
-  it('accepts non-empty login credentials', () => {
+  it('accepts non-empty login credentials and lowercases usernames', () => {
     expect(loginInputSchema.parse({
-      username: ' admin ',
+      username: ' Admin ',
       password: 'password'
     })).toEqual({
       username: 'admin',

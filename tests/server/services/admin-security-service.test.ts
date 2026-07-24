@@ -64,7 +64,10 @@ describe('admin security service', () => {
     const { auth, current, security, securityRepository } = await setup()
     const pending = await security.startTwoFactor(current, 'correct horse battery staple')
     const code = await createTotpCode(pending.secret, now)
-    const enabled = await security.enableTwoFactor(current, code)
+    const enabled = await security.enableTwoFactor(current, {
+      currentPassword: 'correct horse battery staple',
+      code
+    })
 
     await expect(auth.login({ username: 'owner', password: 'correct horse battery staple' }))
       .rejects.toMatchObject({ code: 'two_factor_required' })
@@ -89,11 +92,48 @@ describe('admin security service', () => {
       .toEqual(expect.arrayContaining(['two_factor_required', 'invalid_two_factor', null]))
   })
 
+  it('rejects enable without the current password and keeps a late start from wiping enabled 2FA', async () => {
+    const { auth, current, security, securityRepository } = await setup()
+    const pending = await security.startTwoFactor(current, 'correct horse battery staple')
+    const code = await createTotpCode(pending.secret, now)
+
+    await expect(security.enableTwoFactor(current, {
+      currentPassword: 'wrong password here',
+      code
+    })).rejects.toMatchObject({ code: 'incorrect_current_password' })
+
+    const enabled = await security.enableTwoFactor(current, {
+      currentPassword: 'correct horse battery staple',
+      code
+    })
+    expect(enabled.recoveryCodes.length).toBeGreaterThan(0)
+
+    await expect(security.startTwoFactor(current, 'correct horse battery staple'))
+      .rejects.toMatchObject({ code: 'two_factor_not_pending' })
+
+    // Simulate a racing savePending that loses the service-layer enabled check.
+    const wiped = await securityRepository.savePendingTwoFactor({
+      adminId: current.administrator.id,
+      secretCiphertext: 'should-not-land',
+      secretIv: 'should-not-land',
+      now: new Date(now.getTime() + 1000)
+    })
+    expect(wiped).toBe(false)
+    await expect(securityRepository.getTwoFactor(current.administrator.id))
+      .resolves.toMatchObject({ enabledAt: now })
+    await expect(auth.login({
+      username: 'owner', password: 'correct horse battery staple', secondFactor: code
+    })).resolves.toMatchObject({ administrator: { username: 'owner' } })
+  })
+
   it('consumes a recovery code atomically while disabling two-factor authentication', async () => {
     const { auth, current, security } = await setup()
     const pending = await security.startTwoFactor(current, 'correct horse battery staple')
     const code = await createTotpCode(pending.secret, now)
-    const enabled = await security.enableTwoFactor(current, code)
+    const enabled = await security.enableTwoFactor(current, {
+      currentPassword: 'correct horse battery staple',
+      code
+    })
 
     await expect(security.disableTwoFactor(current, {
       currentPassword: 'correct horse battery staple',

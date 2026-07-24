@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { AppDatabase } from '../database/client'
 import {
   administratorIpRules,
@@ -40,7 +40,9 @@ export function createAdminSecurityRepository(db: AppDatabase): AdminSecurityRep
     },
 
     async savePendingTwoFactor(input) {
-      await executeBatch([
+      // Refuse to overwrite an already-enabled factor: setWhere skips the conflict update, and
+      // recovery-code cleanup only runs when this write actually landed as pending.
+      const [written] = await executeBatch([
         db.insert(administratorSecurity).values({
           adminId: input.adminId,
           twoFactorSecretCiphertext: input.secretCiphertext,
@@ -55,27 +57,52 @@ export function createAdminSecurityRepository(db: AppDatabase): AdminSecurityRep
             twoFactorSecretIv: input.secretIv,
             twoFactorEnabledAt: null,
             updatedAt: input.now
-          }
-        }),
-        db.delete(administratorRecoveryCodes).where(eq(administratorRecoveryCodes.adminId, input.adminId))
+          },
+          setWhere: isNull(administratorSecurity.twoFactorEnabledAt)
+        }).returning({ adminId: administratorSecurity.adminId }),
+        db.delete(administratorRecoveryCodes).where(and(
+          eq(administratorRecoveryCodes.adminId, input.adminId),
+          sql`exists (
+            select 1 from administrator_security
+            where admin_id = ${input.adminId}
+              and two_factor_enabled_at is null
+              and two_factor_secret_ciphertext = ${input.secretCiphertext}
+              and updated_at = ${input.now.getTime()}
+          )`
+        ))
       ])
+      return Array.isArray(written) && written.length > 0
     },
 
     async enableTwoFactor(input) {
-      const statements = [
-        db.delete(administratorRecoveryCodes).where(eq(administratorRecoveryCodes.adminId, input.adminId)),
-        ...input.recoveryCodes.map((code) => db.insert(administratorRecoveryCodes).values({
-          id: code.id,
-          adminId: input.adminId,
-          codeHash: code.codeHash,
-          createdAt: input.enabledAt
-        })),
+      const enabledNow = sql`exists (
+        select 1 from administrator_security
+        where admin_id = ${input.adminId}
+          and two_factor_enabled_at = ${input.enabledAt.getTime()}
+      )`
+      const [enabled] = await executeBatch([
         db.update(administratorSecurity).set({
           twoFactorEnabledAt: input.enabledAt,
           updatedAt: input.enabledAt
-        }).where(eq(administratorSecurity.adminId, input.adminId))
-      ]
-      await executeBatch(statements)
+        }).where(and(
+          eq(administratorSecurity.adminId, input.adminId),
+          isNull(administratorSecurity.twoFactorEnabledAt),
+          isNotNull(administratorSecurity.twoFactorSecretCiphertext)
+        )).returning({ adminId: administratorSecurity.adminId }),
+        db.delete(administratorRecoveryCodes).where(and(
+          eq(administratorRecoveryCodes.adminId, input.adminId),
+          enabledNow
+        )),
+        ...input.recoveryCodes.map((code) => db.insert(administratorRecoveryCodes).select(
+          db.select({
+            id: sql<string>`${code.id}`.as('id'),
+            adminId: sql<string>`${input.adminId}`.as('admin_id'),
+            codeHash: sql<string>`${code.codeHash}`.as('code_hash'),
+            createdAt: sql<number>`${input.enabledAt.getTime()}`.as('created_at')
+          }).from(sql`(select 1)`).where(enabledNow)
+        ))
+      ])
+      return Array.isArray(enabled) && enabled.length > 0
     },
 
     async disableTwoFactor(adminId, now) {

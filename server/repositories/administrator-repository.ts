@@ -41,9 +41,10 @@ export function createAdministratorRepository(db: AppDatabase): AdministratorRep
     },
 
     async findByUsername(username) {
-      const row = await db.query.administrators.findFirst({
-        where: eq(administrators.username, username)
-      })
+      const normalized = username.trim().toLowerCase()
+      const [row] = await db.select().from(administrators)
+        .where(sql`lower(${administrators.username}) = ${normalized}`)
+        .limit(1)
 
       if (!row) {
         return null

@@ -29,6 +29,7 @@ const accountMessage = ref('')
 const accountError = ref('')
 
 const setupPassword = ref('')
+const enablePassword = ref('')
 const setupCode = ref('')
 const setupSecret = ref('')
 const setupQr = ref('')
@@ -36,6 +37,7 @@ const twoFactorPending = ref(false)
 const twoFactorMessage = ref('')
 const twoFactorError = ref('')
 const recoveryCodes = ref<string[]>([])
+const recoveryCopyMessage = ref('')
 const twoFactorEnabledOverride = ref<boolean | null>(null)
 const disablePassword = ref('')
 const disableCode = ref('')
@@ -113,6 +115,7 @@ async function startTwoFactor() {
   twoFactorMessage.value = ''
   twoFactorError.value = ''
   recoveryCodes.value = []
+  recoveryCopyMessage.value = ''
   twoFactorPending.value = true
   try {
     const result = await startAdminTwoFactor(setupPassword.value)
@@ -129,13 +132,18 @@ async function startTwoFactor() {
 async function enableTwoFactor() {
   twoFactorMessage.value = ''
   twoFactorError.value = ''
+  recoveryCopyMessage.value = ''
   twoFactorPending.value = true
   try {
-    const result = await enableAdminTwoFactor(setupCode.value)
+    const result = await enableAdminTwoFactor({
+      currentPassword: enablePassword.value,
+      code: setupCode.value
+    })
     recoveryCodes.value = result.data.recoveryCodes
     setupSecret.value = ''
     setupQr.value = ''
     setupCode.value = ''
+    enablePassword.value = ''
     twoFactorEnabledOverride.value = true
     twoFactorMessage.value = t('security.twoFactorEnabled')
   } catch (caught) {
@@ -145,6 +153,16 @@ async function enableTwoFactor() {
   }
   await refreshOverviewAfterMutation()
   twoFactorPending.value = false
+}
+
+async function copyRecoveryCodes() {
+  recoveryCopyMessage.value = ''
+  try {
+    await navigator.clipboard.writeText(recoveryCodes.value.join('\n'))
+    recoveryCopyMessage.value = t('security.recoveryCopied')
+  } catch {
+    recoveryCopyMessage.value = t('security.recoveryCopyError')
+  }
 }
 
 async function disableTwoFactor() {
@@ -181,9 +199,11 @@ async function saveIpRules() {
     ipMessage.value = t('security.ipSaved')
   } catch (caught) {
     ipError.value = apiErrorMessage(caught, t('security.ipSaveError'))
-  } finally {
     ipPending.value = false
+    return
   }
+  await refreshOverviewAfterMutation()
+  ipPending.value = false
 }
 
 function attemptReason(reason: string | null): string {
@@ -266,7 +286,7 @@ onMounted(() => loadAttempts())
           </label>
           <button class="settings-panel__save" type="submit" :disabled="twoFactorPending">{{ t('security.startTwoFactor') }}</button>
         </form>
-        <form v-else-if="!twoFactorEnabled" class="settings-form" @submit.prevent="enableTwoFactor">
+        <form v-else-if="!twoFactorEnabled" class="settings-form" data-test="security-two-factor-enable" @submit.prevent="enableTwoFactor">
           <div class="two-factor-setup">
             <img v-if="setupQr" :src="setupQr" :alt="t('security.qrAlt')" width="220" height="220" />
             <div>
@@ -274,6 +294,10 @@ onMounted(() => loadAttempts())
               <code class="security-secret">{{ setupSecret }}</code>
             </div>
           </div>
+          <label class="settings-field">
+            <span class="settings-field__label">{{ t('security.currentPassword') }}</span>
+            <input v-model="enablePassword" class="settings-field__input" type="password" autocomplete="current-password" required />
+          </label>
           <label class="settings-field">
             <span class="settings-field__label">{{ t('admin.secondFactor') }}</span>
             <input v-model="setupCode" class="settings-field__input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required />
@@ -296,6 +320,10 @@ onMounted(() => loadAttempts())
           <strong>{{ t('security.recoveryTitle') }}</strong>
           <p>{{ t('security.recoveryDesc') }}</p>
           <code v-for="code in recoveryCodes" :key="code">{{ code }}</code>
+          <button class="settings-panel__save recovery-codes__copy" type="button" data-test="security-copy-recovery" @click="copyRecoveryCodes">
+            {{ t('security.copyRecoveryCodes') }}
+          </button>
+          <p v-if="recoveryCopyMessage" class="settings-panel__saved" data-test="security-recovery-copy-message">{{ recoveryCopyMessage }}</p>
         </div>
         <p v-if="twoFactorMessage" class="settings-panel__saved">{{ twoFactorMessage }}</p>
         <p v-if="twoFactorError" class="settings-field__error">{{ twoFactorError }}</p>
@@ -378,7 +406,8 @@ onMounted(() => loadAttempts())
 .security-status--on, .login-ok { color: var(--admin-success); }
 .security-danger { align-self: flex-start; padding: 8px 16px; border: 1px solid var(--color-accent-warm); border-radius: 8px; background: transparent; color: var(--color-accent-warm); font-weight: 700; cursor: pointer; }
 .recovery-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-top: 14px; padding: 14px; border: 1px solid var(--color-accent-warm); border-radius: 10px; }
-.recovery-codes strong, .recovery-codes p { grid-column: 1 / -1; margin: 0; }
+.recovery-codes strong, .recovery-codes p, .recovery-codes__copy { grid-column: 1 / -1; margin: 0; }
+.recovery-codes__copy { justify-self: start; }
 .security-addresses { resize: vertical; font-family: var(--font-mono, ui-monospace, monospace); }
 .security-table-wrap { overflow-x: auto; }
 .security-table { width: 100%; border-collapse: collapse; font-size: .8rem; }

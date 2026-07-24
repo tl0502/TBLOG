@@ -18,14 +18,25 @@ describe('admin security input validation', () => {
   })
 
   it('validates two-factor inputs and bounded IP lists', () => {
-    expect(enableTwoFactorSchema.parse({ code: '123456' })).toEqual({ code: '123456' })
-    expect(() => enableTwoFactorSchema.parse({ code: '12345' })).toThrow()
+    expect(enableTwoFactorSchema.parse({
+      currentPassword: 'current', code: '123456'
+    })).toEqual({ currentPassword: 'current', code: '123456' })
+    expect(() => enableTwoFactorSchema.parse({ code: '123456' })).toThrow()
+    expect(() => enableTwoFactorSchema.parse({
+      currentPassword: 'current', code: '12345'
+    })).toThrow()
     expect(disableTwoFactorSchema.parse({
       currentPassword: 'current', secondFactor: 'ABCDE-23456'
     })).toBeDefined()
     expect(replaceAdminIpRulesSchema.parse({
       allow: ['192.0.2.1'], deny: []
     })).toBeDefined()
+  })
+
+  it('normalizes account usernames to lowercase', () => {
+    expect(updateAdministratorAccountSchema.parse({
+      currentPassword: 'current', username: ' Owner '
+    })).toMatchObject({ username: 'owner' })
   })
 
   it('coerces bounded login history pagination', () => {

@@ -42,23 +42,58 @@ describe('admin security repository', () => {
     const { repository } = await setup()
     const now = new Date('2026-07-17T01:00:00Z')
 
-    await repository.savePendingTwoFactor({
+    await expect(repository.savePendingTwoFactor({
       adminId: 'admin-1', secretCiphertext: 'cipher', secretIv: 'iv', now
-    })
+    })).resolves.toBe(true)
     await expect(repository.getTwoFactor('admin-1')).resolves.toMatchObject({
       secretCiphertext: 'cipher', secretIv: 'iv', enabledAt: null
     })
 
-    await repository.enableTwoFactor({
+    await expect(repository.enableTwoFactor({
       adminId: 'admin-1',
       enabledAt: now,
       recoveryCodes: [{ id: 'code-1', codeHash: 'hash-1' }]
-    })
+    })).resolves.toBe(true)
     await expect(repository.getTwoFactor('admin-1')).resolves.toMatchObject({ enabledAt: now })
     await repository.disableTwoFactor('admin-1', now)
     await expect(repository.getTwoFactor('admin-1')).resolves.toMatchObject({
       secretCiphertext: null, secretIv: null, enabledAt: null
     })
+  })
+
+  it('refuses pending setup and second enable once two-factor is already enabled', async () => {
+    const { repository, sqlite } = await setup()
+    const now = new Date('2026-07-17T01:00:00Z')
+    await repository.savePendingTwoFactor({
+      adminId: 'admin-1', secretCiphertext: 'cipher', secretIv: 'iv', now
+    })
+    await repository.enableTwoFactor({
+      adminId: 'admin-1',
+      enabledAt: now,
+      recoveryCodes: [{ id: 'code-1', codeHash: 'hash-1' }]
+    })
+
+    await expect(repository.savePendingTwoFactor({
+      adminId: 'admin-1',
+      secretCiphertext: 'race-cipher',
+      secretIv: 'race-iv',
+      now: new Date('2026-07-17T02:00:00Z')
+    })).resolves.toBe(false)
+    await expect(repository.enableTwoFactor({
+      adminId: 'admin-1',
+      enabledAt: new Date('2026-07-17T02:00:00Z'),
+      recoveryCodes: [{ id: 'code-2', codeHash: 'hash-2' }]
+    })).resolves.toBe(false)
+
+    expect(sqlite.prepare(`
+      select two_factor_secret_ciphertext, two_factor_enabled_at
+      from administrator_security where admin_id = 'admin-1'
+    `).get()).toEqual({
+      two_factor_secret_ciphertext: 'cipher',
+      two_factor_enabled_at: now.getTime()
+    })
+    expect(sqlite.prepare('select id, code_hash from administrator_recovery_codes').all())
+      .toEqual([{ id: 'code-1', code_hash: 'hash-1' }])
   })
 
   it('replaces exact IP rules atomically', async () => {

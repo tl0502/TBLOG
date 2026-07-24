@@ -19,17 +19,19 @@ interface LoginAttemptWrite {
 
 export interface AdminSecurityRepository {
   getTwoFactor(adminId: string): Promise<AdministratorTwoFactorRecord | null>
+  /** Returns false when two-factor is already enabled so pending setup cannot wipe it. */
   savePendingTwoFactor(input: {
     adminId: string
     secretCiphertext: string
     secretIv: string
     now: Date
-  }): Promise<void>
+  }): Promise<boolean>
+  /** Returns false when setup is no longer pending (already enabled or missing). */
   enableTwoFactor(input: {
     adminId: string
     enabledAt: Date
     recoveryCodes: Array<{ id: string; codeHash: string }>
-  }): Promise<void>
+  }): Promise<boolean>
   disableTwoFactor(adminId: string, now: Date): Promise<void>
   consumeRecoveryCodeAndDisableTwoFactor(input: {
     adminId: string

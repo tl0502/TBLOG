@@ -233,10 +233,10 @@ export function startAdminTwoFactor(currentPassword: string) {
   )
 }
 
-export function enableAdminTwoFactor(code: string) {
+export function enableAdminTwoFactor(body: { currentPassword: string; code: string }) {
   return $fetch<Envelope<{ recoveryCodes: string[] }>>(
     '/api/v1/admin/security/two-factor/enable',
-    { method: 'POST', body: { code } }
+    { method: 'POST', body }
   )
 }
 
