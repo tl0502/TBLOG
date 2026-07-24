@@ -463,6 +463,24 @@ export function createIntegrationService(dependencies: IntegrationServiceDepende
             }
           }
         } else if (
+          registration.capability === 'cache'
+          && actionKey === 'purge'
+          && dependencies.cache
+        ) {
+          // Rotate the full cache generation so every public projection under the previous
+          // prefix becomes unreachable. Binding/readiness is still reported via checkStatus.
+          try {
+            await dependencies.cache.delete([], { forceGeneration: true })
+            const readiness = await registration.checkStatus(config, env)
+            status = !row?.enabled && (readiness.status === 'active' || readiness.status === 'configured')
+              ? 'disabled'
+              : readiness.status
+            lastError = readiness.error ?? null
+          } catch (error) {
+            status = 'unavailable'
+            lastError = error instanceof Error ? error.message : 'Cache purge failed'
+          }
+        } else if (
           registration.capability === 'commentReplica'
           && actionKey === 'retry'
           && dependencies.commentReplicaJobRepository

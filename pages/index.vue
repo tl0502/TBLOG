@@ -32,7 +32,7 @@ const siteConfig = useOptionalPublicSiteConfigData()
 // Shell skips feed D1; list is always `/api/v1/posts` so page/sort never doubles the article query.
 const [
   { data: bootstrap, error: shellError },
-  { data: feedPage, error: feedError }
+  { data: feedPage, error: feedError, isRevalidating: feedRevalidating }
 ] = await Promise.all([
   useHomeShell(),
   usePostFeed(feedQuery)
@@ -111,6 +111,7 @@ useHomeSeo()
   <HomeView
     :feed="feedItems"
     :feed-meta="feedMeta"
+    :feed-revalidating="feedRevalidating"
     :featured="featured"
     :hotspots="hotspots"
     :tags="tags"

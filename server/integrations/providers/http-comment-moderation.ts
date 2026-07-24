@@ -13,10 +13,21 @@ const optionalModelIdSchema = z.preprocess(
   modelIdSchema.nullable().optional().default(null)
 )
 
+const optionalProxyBaseUrlSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z.string().trim().url().max(2048).nullable().optional().default(null)
+)
+
 const configSchema = z
   .object({
     endpoint: z.string().trim().url().max(2048),
     model: optionalModelIdSchema,
+    /**
+     * Optional public HTTPS reverse-proxy base (origin or origin+path prefix).
+     * Cloudflare Workers cannot use SOCKS/HTTP CONNECT; use a bridge that re-hosts
+     * `/v1/chat/completions` and `/v1/models` when the upstream blocks edge egress.
+     */
+    proxyBaseUrl: optionalProxyBaseUrlSchema,
     timeoutMs: z.coerce.number().int().min(1_000).max(15_000).optional().default(5_000),
     /** Server-managed catalog filled by the listModels action; not edited as a free-form form field. */
     availableModels: z.array(modelIdSchema).max(200).optional().default([])
@@ -79,6 +90,21 @@ function validateChatCompletionsEndpoint(value: unknown): string | null {
   }
 }
 
+function validateProxyBaseUrl(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const baseError = validateModerationEndpoint(value)
+  if (!baseError) return null
+  return baseError
+    .replace('Moderation endpoint', 'Proxy URL')
+    .replace('moderation endpoint', 'proxy URL')
+}
+
+function proxyBaseUrlFrom(config: Record<string, unknown>): string | null {
+  return typeof config.proxyBaseUrl === 'string' && config.proxyBaseUrl.trim()
+    ? config.proxyBaseUrl.trim()
+    : null
+}
+
 function availableModelsFrom(config: Record<string, unknown>): string[] {
   if (!Array.isArray(config.availableModels)) return []
   return config.availableModels.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
@@ -98,6 +124,14 @@ function resolveFormMeta(config: Record<string, unknown>): FormFieldMeta[] {
       placeholder: 'https://api.example.com/v1/chat/completions',
       help: 'HTTPS OpenAI-compatible chat completions URL. Detect Models derives GET …/v1/models from this path.',
       required: true
+    },
+    {
+      key: 'proxyBaseUrl',
+      label: 'Proxy base URL',
+      type: 'url',
+      placeholder: 'https://bridge.example.com',
+      help: 'Optional. When Cloudflare cannot reach the upstream host, set a public HTTPS reverse-proxy origin (or origin+prefix). Requests keep /v1/… paths and the same API key.',
+      required: false
     },
     {
       key: 'model',
@@ -129,10 +163,12 @@ function buildProvider(config: Record<string, unknown>, env: IntegrationEnvironm
   const endpoint = typeof config.endpoint === 'string' ? config.endpoint : ''
   const model = typeof config.model === 'string' ? config.model.trim() : ''
   if (!apiKey || !model || validateChatCompletionsEndpoint(endpoint)) return null
+  if (validateProxyBaseUrl(config.proxyBaseUrl)) return null
   return createHttpCommentModerationProvider({
     endpoint,
     apiKey,
     model,
+    proxyBaseUrl: proxyBaseUrlFrom(config),
     timeoutMs: typeof config.timeoutMs === 'number' ? config.timeoutMs : 5_000,
     fetchImpl: typeof env.fetch === 'function' ? env.fetch as typeof fetch : undefined
   })
@@ -146,7 +182,9 @@ export const httpCommentModerationRegistration: ProviderRegistration = {
   serverManagedConfigKeys: ['availableModels'],
   validate(config) {
     // Model is optional for save / Detect Models; enable still requires it via formMeta.required.
-    return validateChatCompletionsEndpoint(config.endpoint)
+    const endpointError = validateChatCompletionsEndpoint(config.endpoint)
+    if (endpointError) return endpointError
+    return validateProxyBaseUrl(config.proxyBaseUrl)
   },
   resolveFormMeta(config) {
     return resolveFormMeta(config)
@@ -200,11 +238,16 @@ export const httpCommentModerationRegistration: ProviderRegistration = {
     if (endpointError) {
       return { config, status: 'misconfigured', error: endpointError }
     }
+    const proxyError = validateProxyBaseUrl(config.proxyBaseUrl)
+    if (proxyError) {
+      return { config, status: 'misconfigured', error: proxyError }
+    }
 
     try {
       const models = await listOpenAiCompatibleModels({
         endpoint: String(config.endpoint),
         apiKey: String(env.COMMENT_MODERATION_API_KEY),
+        proxyBaseUrl: proxyBaseUrlFrom(config),
         timeoutMs: typeof config.timeoutMs === 'number' ? config.timeoutMs : 5_000,
         fetchImpl: typeof env.fetch === 'function' ? env.fetch as typeof fetch : undefined
       })
@@ -232,6 +275,7 @@ export const httpCommentModerationRegistration: ProviderRegistration = {
     return {
       endpoint: (config.endpoint as string | undefined) ?? null,
       model: typeof config.model === 'string' ? config.model : null,
+      proxyBaseUrl: proxyBaseUrlFrom(config),
       timeoutMs: (config.timeoutMs as number | undefined) ?? 5_000,
       availableModels: availableModelsFrom(config)
     }

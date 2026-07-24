@@ -149,7 +149,10 @@ function fieldLabel(key: string, fallback: string): string {
     siteKey: 'integrations.field.siteKey', keyPrefix: 'integrations.field.keyPrefix', ttlSeconds: 'integrations.field.ttlSeconds',
     publicBaseUrl: 'integrations.field.publicBaseUrl', thumbnail: 'integrations.field.thumbnail',
     medium: 'integrations.field.medium', large: 'integrations.field.large',
-    endpoint: 'integrations.field.endpoint', model: 'integrations.field.model', timeoutMs: 'integrations.field.timeoutMs'
+    endpoint: 'integrations.field.endpoint',
+    proxyBaseUrl: 'integrations.field.proxyBaseUrl',
+    model: 'integrations.field.model',
+    timeoutMs: 'integrations.field.timeoutMs'
   } as const
   return key in keys ? t(keys[key as keyof typeof keys]) : fallback
 }
@@ -168,6 +171,7 @@ function actionLabel(key: string, fallback: string): string {
   if (key === 'listModels') return t('integrations.action.listModels')
   if (key === 'generateCredential') return t('integrations.action.generateCredential')
   if (key === 'resync') return t('integrations.action.resync')
+  if (key === 'purge') return t('integrations.action.purge')
   return fallback
 }
 
@@ -179,6 +183,7 @@ function fieldHelp(key: string, fallback: string): string {
     && props.integration.providerKey === 'http'
   ) {
     if (key === 'endpoint') return t('integrations.help.llmEndpoint')
+    if (key === 'proxyBaseUrl') return t('integrations.help.llmProxy')
     if (key === 'model') {
       return (props.integration.formMeta.find((meta) => meta.key === 'model')?.options?.length ?? 0) > 0
         ? t('integrations.help.llmModelWithMenu')

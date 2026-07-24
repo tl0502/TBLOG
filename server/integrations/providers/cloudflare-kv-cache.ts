@@ -62,10 +62,13 @@ export const cloudflareKvCacheRegistration: ProviderRegistration = {
       key: 'ttlSeconds',
       label: 'Default TTL (seconds)',
       type: 'text',
-      placeholder: '300',
-      help: 'Optional default expiry for cached entries (minimum 60). Blank uses a 30-day safety expiry.',
+      placeholder: '3600',
+      help: 'Optional default expiry for cached entries (minimum 60). Blank uses a 1-hour safety expiry.',
       required: false
     }
   ],
-  actions: [{ key: 'test', label: 'Check configuration and binding' }]
+  actions: [
+    { key: 'test', label: 'Check configuration and binding' },
+    { key: 'purge', label: 'Purge cache (rotate generation)' }
+  ]
 }

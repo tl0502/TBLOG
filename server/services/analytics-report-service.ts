@@ -17,6 +17,8 @@ import type {
   IntegrationSettingsRepository,
   StoredIntegration
 } from '../repositories/contracts/integration-repositories'
+import type { CacheProvider } from '../providers/cache/cache-provider'
+import { cacheKeys } from '../utils/cache-keys'
 import type { Permission } from './permissions'
 
 const SYNC_LEASE_MS = 10 * 60_000
@@ -178,6 +180,8 @@ export function createAnalyticsReportService(deps: {
   integrationRepository: IntegrationSettingsRepository
   articleRepository: AnalyticsReportArticleRepository
   createProvider: (integration: StoredIntegration) => Promise<AnalyticsReportProvider | null> | AnalyticsReportProvider | null
+  /** Optional public cache — used to drop the hotspots projection after a report publish. */
+  cache?: CacheProvider
 }) {
   const reader = createAnalyticsReportReader(deps)
   async function selected(): Promise<{
@@ -336,6 +340,8 @@ export function createAnalyticsReportService(deps: {
       })
       if (!marked) throw new DomainError('analytics_report_lease_expired', 'Analytics report synchronization lease expired', 409)
       reader.invalidateCurrentReport()
+      // Hotspots are derived from the published report; drop the shared public projection.
+      await deps.cache?.delete([cacheKeys.hotspots()]).catch(() => undefined)
       return status(activatedAt)
     } catch (error) {
       await deps.stateRepository.markFailure(runId, new Date(), safeFailure(error)).catch(() => false)

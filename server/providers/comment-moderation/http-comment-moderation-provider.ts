@@ -170,9 +170,40 @@ export function deriveOpenAiCompatibleModelsUrl(chatCompletionsUrl: string): str
   return url.toString()
 }
 
+/**
+ * Rewrite a target OpenAI-compatible URL through an optional reverse-proxy base.
+ * Workers cannot use SOCKS/HTTP CONNECT proxies; this swaps the origin (and optional path prefix)
+ * so Cloudflare can reach a public bridge that then talks to the upstream gateway.
+ *
+ * - target `https://windhub.cc/v1/chat/completions`
+ * - proxy  `https://bridge.example.com` → `https://bridge.example.com/v1/chat/completions`
+ * - proxy  `https://bridge.example.com/openai` → `https://bridge.example.com/openai/v1/chat/completions`
+ */
+export function applyProxyBaseUrl(
+  targetUrl: string,
+  proxyBaseUrl: string | null | undefined
+): string {
+  const proxy = typeof proxyBaseUrl === 'string' ? proxyBaseUrl.trim() : ''
+  if (!proxy) return targetUrl
+  let target: URL
+  let base: URL
+  try {
+    target = new URL(targetUrl)
+    base = new URL(proxy)
+  } catch {
+    throw new CommentModerationProviderError()
+  }
+  const prefix = base.pathname.replace(/\/+$/u, '')
+  const prefixPath = prefix === '/' ? '' : prefix
+  const path = `${prefixPath}${target.pathname.startsWith('/') ? target.pathname : `/${target.pathname}`}`
+  return `${base.origin}${path}${target.search}`
+}
+
 export interface ListOpenAiCompatibleModelsOptions {
   endpoint: string
   apiKey: string
+  /** Optional public HTTPS reverse-proxy base (origin or origin+prefix). */
+  proxyBaseUrl?: string | null
   timeoutMs?: number
   fetchImpl?: typeof fetch
 }
@@ -183,7 +214,10 @@ export async function listOpenAiCompatibleModels(
 ): Promise<string[]> {
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? 5_000
-  const modelsUrl = deriveOpenAiCompatibleModelsUrl(options.endpoint)
+  const modelsUrl = applyProxyBaseUrl(
+    deriveOpenAiCompatibleModelsUrl(options.endpoint),
+    options.proxyBaseUrl
+  )
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -247,6 +281,8 @@ export interface HttpCommentModerationProviderOptions {
   endpoint: string
   apiKey: string
   model: string
+  /** Optional public HTTPS reverse-proxy base used when Workers cannot reach the upstream host. */
+  proxyBaseUrl?: string | null
   timeoutMs?: number
   fetchImpl?: typeof fetch
 }
@@ -258,6 +294,7 @@ export function createHttpCommentModerationProvider(
   const timeoutMs = options.timeoutMs ?? 5_000
   const model = options.model.trim()
   if (!model) throw new CommentModerationProviderError()
+  const chatUrl = applyProxyBaseUrl(options.endpoint, options.proxyBaseUrl)
 
   return {
     providerKey: 'http',
@@ -266,7 +303,7 @@ export function createHttpCommentModerationProvider(
       const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
       try {
-        const response = await fetchImpl(options.endpoint, {
+        const response = await fetchImpl(chatUrl, {
           method: 'POST',
           redirect: 'error',
           signal: controller.signal,

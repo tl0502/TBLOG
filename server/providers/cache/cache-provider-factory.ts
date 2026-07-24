@@ -16,8 +16,12 @@ interface KvCacheConfig {
   ttlSeconds?: number
 }
 
-/** Bounds orphaned generations created only as an unavailable-cache fallback. */
-export const CACHE_GENERATION_SAFETY_TTL_SECONDS = 2_592_000
+/**
+ * Default expiry when the administrator leaves TTL blank. Bounds orphaned generations after
+ * rotation and limits how long a failed invalidation can serve stale public projections.
+ * Operators who need longer retention can set `ttlSeconds` explicitly (up to 30 days).
+ */
+export const CACHE_GENERATION_SAFETY_TTL_SECONDS = 3_600
 /** Bump when a deployment changes a cached public projection incompatibly. */
 export const CACHE_SCHEMA_VERSION = 1
 /** Keep one invalidation comfortably below KV's invocation and Free-plan daily delete budgets. */
@@ -132,14 +136,15 @@ export function createCacheProviderForEvent(event: H3Event): CacheProvider {
     async delete(keys: string[], options?: CacheDeleteOptions): Promise<void> {
       try {
         const uniqueKeys = [...new Set(keys)]
-        if (uniqueKeys.length === 0) return
         let keysToDelete = uniqueKeys
 
+        // Generation rotation does not need resource keys (used by purge and strong withdrawals).
         if (options?.forceGeneration) {
           if (await rotateGenerationBestEffort('strong cache withdrawal requested')) return
           // Preserve the previous best-effort behavior when D1 is unavailable: exact deletion is
           // still eventually consistent, but is better than abandoning the withdrawal entirely.
         }
+        if (uniqueKeys.length === 0) return
         if (!options?.forceGeneration && uniqueKeys.length > CACHE_RESOURCE_DELETE_LIMIT) {
           if (await rotateGenerationBestEffort(
             `resource invalidation exceeded ${CACHE_RESOURCE_DELETE_LIMIT} keys`

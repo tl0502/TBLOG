@@ -3,6 +3,7 @@ import {
   type CommentModerationInput
 } from '../../../server/providers/comment-moderation/comment-moderation-provider'
 import {
+  applyProxyBaseUrl,
   createHttpCommentModerationProvider,
   deriveOpenAiCompatibleModelsUrl,
   extractJsonObject,
@@ -193,6 +194,53 @@ describe('HTTP OpenAI-compatible comment moderation provider', () => {
       .toBe('https://llm.example.com/v1/models')
     expect(deriveOpenAiCompatibleModelsUrl('https://openrouter.ai/api/v1/chat/completions?x=1'))
       .toBe('https://openrouter.ai/api/v1/models')
+  })
+
+  it('rewrites chat and models URLs through an optional reverse-proxy base', () => {
+    expect(applyProxyBaseUrl(
+      'https://windhub.cc/v1/chat/completions',
+      'https://bridge.example.com'
+    )).toBe('https://bridge.example.com/v1/chat/completions')
+    expect(applyProxyBaseUrl(
+      'https://windhub.cc/v1/models',
+      'https://bridge.example.com/openai/'
+    )).toBe('https://bridge.example.com/openai/v1/models')
+    expect(applyProxyBaseUrl('https://windhub.cc/v1/models', null))
+      .toBe('https://windhub.cc/v1/models')
+  })
+
+  it('sends chat completions through the proxy base when configured', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      chatResponse(JSON.stringify({ decision: 'allow', confidence: 0.91 }))
+    )
+    const provider = createHttpCommentModerationProvider({
+      endpoint: 'https://windhub.cc/v1/chat/completions',
+      apiKey: 'secret-key',
+      model: 'safe-model',
+      proxyBaseUrl: 'https://bridge.example.com',
+      fetchImpl
+    })
+
+    await provider.moderate(input)
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://bridge.example.com/v1/chat/completions')
+  })
+
+  it('lists models through the proxy base when configured', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{ id: 'm1' }]
+    }), { status: 200 }))
+
+    await listOpenAiCompatibleModels({
+      endpoint: 'https://windhub.cc/v1/chat/completions',
+      apiKey: 'secret-key',
+      proxyBaseUrl: 'https://bridge.example.com',
+      fetchImpl
+    })
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://bridge.example.com/v1/models',
+      expect.objectContaining({ method: 'GET' })
+    )
   })
 
   it('lists sorted unique model ids from GET /v1/models', async () => {

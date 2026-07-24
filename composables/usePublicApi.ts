@@ -113,7 +113,12 @@ export function useHomeRailData() {
 export function usePostDetail(slug: MaybeRefOrGetter<string>) {
   return useStaleFirstPublicResource<Envelope<PostDetailView>>(
     () => `/api/v1/posts/${toValue(slug)}`,
-    { key: computed(() => publicResourceKey(`posts/${toValue(slug)}`)) }
+    {
+      key: computed(() => publicResourceKey(`posts/${toValue(slug)}`)),
+      // Always soft-revalidate article detail so an admin unpublish/edit is not held for the
+      // session freshness window after the user returns from another page.
+      freshMs: 0
+    }
   )
 }
 

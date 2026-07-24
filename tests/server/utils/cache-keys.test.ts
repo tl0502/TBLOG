@@ -3,15 +3,16 @@ import { createNoOpCacheProvider } from '../../../server/providers/cache/no-op-c
 
 describe('cache keys', () => {
   it('builds resource-oriented keys', () => {
-    expect(cacheKeys.post('p1')).toBe('post:p1')
     expect(cacheKeys.postSlug('hello-world')).toBe('post-slug:hello-world')
     expect(cacheKeys.category('c1')).toBe('category:c1')
     expect(cacheKeys.tag('t1')).toBe('tag:t1')
     expect(cacheKeys.home()).toBe('home:v2')
     expect(cacheKeys.featuredPost()).toBe('featured-post:v2')
+    expect(cacheKeys.hotspots()).toBe('hotspots:v1')
     expect(cacheKeys.archive()).toBe('archive')
     expect(cacheKeys.rss()).toBe('rss')
     expect(cacheKeys.sitemap()).toBe('sitemap')
+    expect(cacheKeys.siteSettings()).toBe('site-settings')
   })
 })
 

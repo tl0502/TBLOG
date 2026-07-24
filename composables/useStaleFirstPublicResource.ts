@@ -3,6 +3,7 @@ import {
   getCurrentInstance,
   onMounted,
   onScopeDispose,
+  shallowRef,
   toValue,
   watch,
   type MaybeRefOrGetter
@@ -129,6 +130,8 @@ export function useStaleFirstPublicResource<TData>(
   let servedFromSession = false
   const hydratingAtSetup = import.meta.client && useNuxtApp().isHydrating
   let revalidationController: AbortController | null = null
+  /** True while a client soft-revalidate is in flight (pagination/sort or mount refresh). */
+  const isRevalidating = shallowRef(false)
   // Relative API calls during SSR must retain the current Nitro request context so Cloudflare
   // bindings (notably D1) remain available to the internally dispatched API handler.
   const requestFetch = import.meta.server ? useRequestFetch() : $fetch
@@ -165,6 +168,7 @@ export function useStaleFirstPublicResource<TData>(
   async function revalidate(keyAtStart: string): Promise<void> {
     if (revalidatingKeys.has(keyAtStart)) return
     revalidatingKeys.add(keyAtStart)
+    isRevalidating.value = true
     const controller = new AbortController()
     revalidationController?.abort()
     revalidationController = controller
@@ -193,6 +197,8 @@ export function useStaleFirstPublicResource<TData>(
     } finally {
       if (revalidationController === controller) revalidationController = null
       revalidatingKeys.delete(keyAtStart)
+      // Only clear when this call still owns the flag path (another revalidate may have started).
+      if (!revalidatingKeys.size) isRevalidating.value = false
     }
   }
 
@@ -233,5 +239,8 @@ export function useStaleFirstPublicResource<TData>(
     })
   }
 
-  return state
+  return {
+    ...state,
+    isRevalidating
+  }
 }

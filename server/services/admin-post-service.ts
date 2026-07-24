@@ -325,7 +325,11 @@ export function createAdminPostService(dependencies: AdminPostServiceDependencie
           ],
           tagIds: command.tagIds !== undefined
             ? [...existing.tagIds, ...command.tagIds]
-            : existing.tagIds
+            : existing.tagIds,
+          // Exact KV deletes are eventually consistent and concurrent read-through fills can
+          // re-poison a key after delete. Rotate the generation so edited public content cannot
+          // remain addressable under the previous namespace.
+          forceGeneration: true
         })
         // Re-index a published article after its content/taxonomy may have changed.
         if (isIndexable(existing)) {
@@ -353,9 +357,10 @@ export function createAdminPostService(dependencies: AdminPostServiceDependencie
           slugs: [existing.slug],
           categoryIds: [existing.categoryId],
           tagIds: existing.tagIds,
-          // KV deletes are eventually consistent. A withdrawal must make the old generation
-          // unreachable instead of waiting for every region's cached value to expire.
-          forceGeneration: status === 'draft' && existing.status === 'published'
+          // KV deletes are eventually consistent; concurrent read-through can re-fill stale
+          // values. Rotate the generation on any visibility flip so lists and detail pages
+          // cannot keep serving the previous public projection.
+          forceGeneration: true
         })
       }
 

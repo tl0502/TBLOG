@@ -214,6 +214,16 @@ describe('createCacheProviderForEvent', () => {
     expect(calls.delete).toEqual([])
   })
 
+  it('rotates the generation for a keyless purge', async () => {
+    const { kv, calls } = createFakeKv()
+
+    await createCacheProviderForEvent(makeEvent({ CACHE_KV: kv }))
+      .delete([], { forceGeneration: true })
+
+    expect(touch).toHaveBeenCalledOnce()
+    expect(calls.delete).toEqual([])
+  })
+
   it('falls back to exact deletion when a strong-withdrawal generation rotation fails', async () => {
     touch.mockRejectedValue(new Error('d1 down'))
     findByCapabilityAndProvider.mockResolvedValue({

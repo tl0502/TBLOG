@@ -412,6 +412,35 @@ describe('integration service', () => {
     expect(view.lastCheckedAt).toEqual(NOW)
   })
 
+  it('purges the public cache by rotating the generation', async () => {
+    const { kv } = (() => {
+      const store = new Map<string, string>()
+      return {
+        kv: {
+          async get(key: string) { return store.get(key) ?? null },
+          async put(key: string, value: string) { store.set(key, value) },
+          async delete(key: string) { store.delete(key) }
+        }
+      }
+    })()
+    const cacheDelete = vi.fn().mockResolvedValue(undefined)
+    const { service, repository } = createService({ CACHE_KV: kv }, cacheDelete)
+    repository.seed({
+      capability: 'cache',
+      providerKey: 'cloudflare-kv',
+      enabled: true,
+      publicConfigJson: '{}',
+      status: 'active',
+      lastCheckedAt: null,
+      lastError: null
+    })
+
+    const view = await service.runAction('cache', 'cloudflare-kv', 'purge', ADMIN)
+
+    expect(cacheDelete).toHaveBeenCalledWith([], { forceGeneration: true })
+    expect(view).toMatchObject({ status: 'active', lastError: null })
+  })
+
   it('does not advance the analytics report configuration generation during a status probe', async () => {
     const generation = new Date('2026-07-14T10:00:00.000Z')
     const report = {

@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { createDatabaseClient } from '../database/client'
 import { findRegistration } from '../integrations/registry'
+import { createCacheProviderForEvent } from '../providers/cache/cache-provider-factory'
 import { createAnalyticsReportStateRepository } from '../repositories/analytics-report-state-repository'
 import { createIntegrationSettingsRepository } from '../repositories/integration-settings-repository'
 import { createPostReadRepository } from '../repositories/post-read-repository'
@@ -9,6 +10,12 @@ import { mergeCloudflareRuntimeEnv } from '../utils/runtime-env'
 import { createAnalyticsReportService } from './analytics-report-service'
 
 export { mergeCloudflareRuntimeEnv as mergeAnalyticsReportRuntimeEnv } from '../utils/runtime-env'
+
+function eventFromBindings(bindings: Record<string, unknown> & { DB: D1Database }): H3Event {
+  // Scheduled tasks and request handlers share the same env shape; synthesize a minimal H3 event
+  // so the cache factory can resolve CACHE_KV + the integration generation without branching.
+  return { context: { cloudflare: { env: bindings } } } as H3Event
+}
 
 export function createAnalyticsReportServiceForEvent(event: H3Event) {
   const binding = event.context.cloudflare?.env?.DB
@@ -27,6 +34,7 @@ export function createAnalyticsReportServiceForBindings(
     stateRepository: createAnalyticsReportStateRepository(db),
     integrationRepository: createIntegrationSettingsRepository(db),
     articleRepository: createPostReadRepository(db),
+    cache: createCacheProviderForEvent(eventFromBindings(bindings)),
     createProvider(integration: StoredIntegration) {
       const registration = findRegistration(integration.capability, integration.providerKey)
       if (!registration?.createAnalyticsReportProvider) return null

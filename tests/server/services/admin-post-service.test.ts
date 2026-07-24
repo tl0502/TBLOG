@@ -350,7 +350,7 @@ describe('admin post service', () => {
   })
 
   it('invalidates public caches when updating a published post', async () => {
-    const { service, deleted } = build([
+    const { service, deleted, deleteOptions } = build([
       editFixture({ id: 'p1', slug: 'old', status: 'published', categoryId: 'cat1', tagIds: ['t1'] })
     ])
 
@@ -364,6 +364,7 @@ describe('admin post service', () => {
     ]))
     // A published article's change also invalidates the RSS feed and sitemap.
     expect(keys).toEqual(expect.arrayContaining(['rss', 'sitemap']))
+    expect(deleteOptions[0]).toEqual({ forceGeneration: true })
   })
 
   it('stores processed content before replacing tags when updating a post', async () => {
@@ -413,7 +414,7 @@ describe('admin post service', () => {
   })
 
   it('publishes: stamps publishedAt and invalidates caches', async () => {
-    const { service, repo, deleted } = build([editFixture({ id: 'p1', slug: 'p1', status: 'draft', publishedAt: null })])
+    const { service, repo, deleted, deleteOptions } = build([editFixture({ id: 'p1', slug: 'p1', status: 'draft', publishedAt: null })])
 
     await service.changeStatus('p1', 'published')
 
@@ -423,6 +424,7 @@ describe('admin post service', () => {
     expect(deleted[0]).toEqual(expect.arrayContaining([
       'home:v2', 'archive', 'post-slug:p1', cacheKeys.hotspots()
     ]))
+    expect(deleteOptions[0]).toEqual({ forceGeneration: true })
   })
 
   it('unpublishes: keeps publishedAt and invalidates caches', async () => {

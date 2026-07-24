@@ -26,7 +26,8 @@ export function createPublicHomeBootstrapServiceForEvent(event: H3Event) {
   })
   const publicHotspotService = createPublicHotspotService({
     analyticsReportService,
-    postReadRepository
+    postReadRepository,
+    cache
   })
   const homeRailService = createHomeRailService({
     settingsRepository: createSettingsRepository(db),

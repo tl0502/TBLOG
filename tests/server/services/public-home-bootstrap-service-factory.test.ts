@@ -88,7 +88,8 @@ describe('public home bootstrap service factory', () => {
     })
     expect(createPublicHotspotService).toHaveBeenCalledWith({
       analyticsReportService,
-      postReadRepository
+      postReadRepository,
+      cache
     })
     expect(createHomeRailService).toHaveBeenCalledWith({
       settingsRepository,

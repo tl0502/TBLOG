@@ -15,6 +15,8 @@ import { useTblogI18n } from '~/composables/useTblogI18n'
 interface Props {
   feed: ArticleListItemView[]
   feedMeta?: HomeFeedMeta
+  /** Soft-revalidate in flight (pagination/sort); keeps prior feed visible with a busy signal. */
+  feedRevalidating?: boolean
   featured?: ArticleListItemView[]
   hotspots?: HotspotsView | null
   tags: TagView[]
@@ -28,6 +30,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   featured: () => [],
   feedMeta: () => ({ page: 1, pageSize: 25, total: 0, pageCount: 0, sort: 'publishedAt', order: 'desc' }),
+  feedRevalidating: false,
   hotspots: null,
   profile: null,
   fallbackCover: null,
@@ -65,7 +68,12 @@ const effectiveOrder = computed(() => effectiveSort.value === props.feedMeta.sor
         <HomeRailCards :cards="props.railCards" :tags="tags" :data="props.railData" />
       </aside>
 
-      <main id="articles" class="home__feed">
+      <main
+        id="articles"
+        class="home__feed"
+        :class="{ 'home__feed--revalidating': props.feedRevalidating }"
+        :aria-busy="props.feedRevalidating ? 'true' : undefined"
+      >
         <div class="home__feed-head">
           <h2 class="home__feed-title">{{ t('home.latest') }}</h2>
           <div class="home__feed-controls">
@@ -143,6 +151,12 @@ const effectiveOrder = computed(() => effectiveSort.value === props.feedMeta.sor
   flex-direction: column;
   gap: 14px;
   scroll-margin-top: 88px;
+  transition: opacity 0.18s ease;
+}
+
+.home__feed--revalidating {
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .home__feed-head {

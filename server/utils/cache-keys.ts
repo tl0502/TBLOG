@@ -1,5 +1,4 @@
 export const cacheKeys = {
-  post: (id: string) => `post:${id}`,
   postSlug: (slug: string) => `post-slug:${slug}`,
   category: (id: string) => `category:${id}`,
   tag: (id: string) => `tag:${id}`,

@@ -37,6 +37,7 @@ describe('HTTP OpenAI-compatible comment moderation integration registration', (
     expect(httpCommentModerationRegistration.publicProjection(config)).toEqual({
       endpoint: 'https://llm.example.com/v1/chat/completions',
       model: 'safe-model',
+      proxyBaseUrl: null,
       timeoutMs: 4000,
       availableModels: ['safe-model', 'other-model']
     })
@@ -68,6 +69,24 @@ describe('HTTP OpenAI-compatible comment moderation integration registration', (
     }) as Record<string, unknown>
 
     expect(httpCommentModerationRegistration.validate(config)).toContain('HTTPS')
+  })
+
+  it('accepts an optional public proxy base and rejects private proxy hosts', () => {
+    const ok = httpCommentModerationRegistration.configSchema.parse({
+      endpoint: 'https://windhub.cc/v1/chat/completions',
+      model: 'deepseek-v3-2-251201',
+      proxyBaseUrl: 'https://bridge.example.com'
+    }) as Record<string, unknown>
+    expect(httpCommentModerationRegistration.validate(ok)).toBeNull()
+    expect(httpCommentModerationRegistration.publicProjection(ok).proxyBaseUrl)
+      .toBe('https://bridge.example.com')
+
+    const bad = httpCommentModerationRegistration.configSchema.parse({
+      endpoint: 'https://windhub.cc/v1/chat/completions',
+      model: 'deepseek-v3-2-251201',
+      proxyBaseUrl: 'https://127.0.0.1:8787'
+    }) as Record<string, unknown>
+    expect(httpCommentModerationRegistration.validate(bad)).toMatch(/Proxy URL|public host/i)
   })
 
   it('rejects endpoints that are not chat completions URLs', () => {

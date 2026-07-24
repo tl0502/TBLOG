@@ -250,11 +250,13 @@ describe('stale-first public resource keys', () => {
     const call = asyncDataState.calls.at(-1)!
     call.data.value = await call.handler({}, { signal: new AbortController().signal })
     expect(state.value?.data.value).toEqual({ value: 'page-1' })
+    expect(state.value?.isRevalidating.value).toBe(false)
 
     key.value = 'posts?page=2'
     await flush()
     // No session entry for page 2 yet — keep page 1 visible while the request is in flight.
     expect(state.value?.data.value).toEqual({ value: 'page-1' })
+    expect(state.value?.isRevalidating.value).toBe(true)
     expect(request).toHaveBeenCalledTimes(2)
 
     app.unmount()
