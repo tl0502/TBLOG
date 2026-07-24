@@ -7,11 +7,13 @@ import {
   syncAdminAnalyticsReport,
   updateAdminAnalyticsReportSettings,
   useAdminAnalyticsReportStatus,
+  type AdminAnalyticsReportStatusView,
   type AnalyticsReportSchedule,
   type AnalyticsReportWeekday,
   type IntegrationCapability,
   type SettingsDomain
 } from '~/composables/useAdminApi'
+import type { Envelope } from '~/composables/usePublicApi'
 import { useTblogI18n } from '~/composables/useTblogI18n'
 
 // Heavy, tab-gated panels load on demand so they stay out of the settings route's initial JS chunk.
@@ -73,14 +75,28 @@ const reportSyncing = shallowRef(false)
 const reportMessage = shallowRef('')
 const reportSaveError = shallowRef('')
 const reportRefreshWarning = shallowRef('')
+const reportHasStatus = computed(() => Boolean(reportData.value?.data))
+const reportProviderMissing = computed(() => (
+  reportEnabled.value && reportData.value?.data?.syncSupported !== true
+))
 watch(() => reportData.value?.data, (value) => {
   if (!value) return
   reportEnabled.value = value.enabled
   reportSchedule.value = value.schedule
-  reportTimeOfDay.value = value.timeOfDay
+  reportTimeOfDay.value = normalizeReportTimeOfDay(value.timeOfDay)
   reportTimezone.value = value.timezone
   reportDayOfWeek.value = value.dayOfWeek
 }, { immediate: true })
+
+/** HTML time inputs may emit `HH:mm:ss`; store and submit canonical `HH:mm`. */
+function normalizeReportTimeOfDay(value: string): string {
+  const match = /^(?:([01]\d|2[0-3]):([0-5]\d))(?::[0-5]\d)?$/.exec(value.trim())
+  return match ? `${match[1]}:${match[2]}` : value.trim()
+}
+
+function applyReportStatus(envelope: Envelope<AdminAnalyticsReportStatusView> | null | undefined) {
+  if (envelope?.data) reportData.value = envelope
+}
 
 async function saveReportSettings() {
   reportSaving.value = true
@@ -88,24 +104,17 @@ async function saveReportSettings() {
   reportSaveError.value = ''
   reportRefreshWarning.value = ''
   try {
-    await updateAdminAnalyticsReportSettings({
+    const result = await updateAdminAnalyticsReportSettings({
       enabled: reportEnabled.value,
       schedule: reportSchedule.value,
-      timeOfDay: reportTimeOfDay.value,
+      timeOfDay: normalizeReportTimeOfDay(reportTimeOfDay.value),
       timezone: reportTimezone.value,
       dayOfWeek: reportDayOfWeek.value
     })
+    applyReportStatus(result)
     reportMessage.value = t('analytics.reportSettingsSaved')
   } catch (error) {
     reportSaveError.value = apiErrorMessage(error, t('analytics.reportSettingsError'))
-    reportSaving.value = false
-    return
-  }
-
-  try {
-    await refreshReport()
-  } catch {
-    reportRefreshWarning.value = t('analytics.reportSettingsRefreshError')
   } finally {
     reportSaving.value = false
   }
@@ -113,23 +122,27 @@ async function saveReportSettings() {
 
 async function syncReport() {
   reportSyncing.value = true
+  reportMessage.value = ''
   reportSaveError.value = ''
   reportRefreshWarning.value = ''
   try {
-    await syncAdminAnalyticsReport()
+    const result = await syncAdminAnalyticsReport()
+    applyReportStatus(result)
     reportMessage.value = t('analytics.reportSyncComplete')
   } catch (error) {
     reportSaveError.value = apiErrorMessage(error, t('analytics.reportSyncError'))
+  } finally {
     reportSyncing.value = false
-    return
   }
+}
 
+async function retryReportStatus() {
+  reportSaveError.value = ''
+  reportRefreshWarning.value = ''
   try {
     await refreshReport()
   } catch {
-    reportRefreshWarning.value = t('analytics.reportSettingsRefreshError')
-  } finally {
-    reportSyncing.value = false
+    reportRefreshWarning.value = t('analytics.reportLoadError')
   }
 }
 
@@ -191,6 +204,10 @@ function integrationCapabilities(key: Tab['key']): IntegrationCapability[] {
 
           <DatabaseUpdatePanel v-if="tab.key === 'database'" />
 
+          <p v-if="tab.key === 'analytics'" class="admin-muted settings-analytics-notice" data-test="analytics-direct-notice">
+            {{ t('settings.analyticsDirectNotice') }}
+          </p>
+
           <section v-if="integrationCapabilities(tab.key).length > 0" class="settings-section settings-section--providers">
             <div class="settings-section__heading">
               <h3>{{ t('settings.providers') }}</h3>
@@ -203,16 +220,24 @@ function integrationCapabilities(key: Tab['key']): IntegrationCapability[] {
               <h3>{{ t('analytics.reportSettingsTitle') }}</h3>
               <p class="admin-muted">{{ t('analytics.reportSettingsDescription') }}</p>
             </div>
-            <p v-if="reportPending" class="admin-muted">{{ t('common.loading') }}</p>
-            <p v-else-if="reportLoadError" class="admin-alert" data-test="analytics-report-settings-error">{{ apiErrorMessage(reportLoadError, t('analytics.reportLoadError')) }}</p>
-            <form class="settings-form" @submit.prevent="saveReportSettings">
+            <p v-if="reportPending && !reportHasStatus" class="admin-muted" data-test="analytics-report-settings-loading">{{ t('common.loading') }}</p>
+            <div v-else-if="reportLoadError && !reportHasStatus" class="settings-analytics-load-error">
+              <p class="admin-alert" data-test="analytics-report-settings-error">{{ apiErrorMessage(reportLoadError, t('analytics.reportLoadError')) }}</p>
+              <button class="settings-panel__sync" type="button" data-test="analytics-report-settings-retry" :disabled="reportPending" @click="retryReportStatus">
+                {{ t('analytics.reportRetry') }}
+              </button>
+            </div>
+            <form v-else-if="reportHasStatus" class="settings-form" @submit.prevent="saveReportSettings">
               <label class="settings-field settings-field--check">
-                <input v-model="reportEnabled" type="checkbox" :disabled="reportPending || Boolean(reportLoadError)">
+                <input v-model="reportEnabled" type="checkbox" :disabled="reportPending">
                 <span class="settings-field__label">{{ t('analytics.reportEnabled') }}</span>
               </label>
+              <p v-if="reportProviderMissing" class="admin-alert" data-test="analytics-report-provider-missing">
+                {{ t('analytics.reportProviderRequired') }}
+              </p>
               <label class="settings-field">
                 <span class="settings-field__label">{{ t('analytics.reportSchedule') }}</span>
-                <select v-model="reportSchedule" data-test="analytics-report-schedule" class="settings-field__input" :disabled="!reportEnabled || reportPending || Boolean(reportLoadError)">
+                <select v-model="reportSchedule" data-test="analytics-report-schedule" class="settings-field__input" :disabled="!reportEnabled || reportPending">
                   <option value="off">{{ t('analytics.scheduleOff') }}</option>
                   <option value="hourly">{{ t('analytics.scheduleHourly') }}</option>
                   <option value="every6Hours">{{ t('analytics.scheduleEvery6Hours') }}</option>
@@ -233,7 +258,10 @@ function integrationCapabilities(key: Tab['key']): IntegrationCapability[] {
                   <option value="sun">{{ t('analytics.weekdaySun') }}</option>
                 </select>
               </label>
-              <label v-if="reportUsesCalendar" class="settings-field"><span class="settings-field__label">{{ t('analytics.reportTimeOfDay') }}</span><input v-model="reportTimeOfDay" data-test="analytics-report-time" class="settings-field__input" type="time" :disabled="!reportEnabled"></label>
+              <label v-if="reportUsesCalendar" class="settings-field">
+                <span class="settings-field__label">{{ t('analytics.reportTimeOfDay') }}</span>
+                <input v-model="reportTimeOfDay" data-test="analytics-report-time" class="settings-field__input" type="time" step="60" :disabled="!reportEnabled">
+              </label>
               <label v-if="reportUsesCalendar" class="settings-field">
                 <span class="settings-field__label">{{ t('analytics.reportTimezone') }}</span>
                 <input v-model="reportTimezone" data-test="analytics-report-timezone" class="settings-field__input" type="text" list="analytics-report-timezones" :disabled="!reportEnabled">
@@ -242,11 +270,23 @@ function integrationCapabilities(key: Tab['key']): IntegrationCapability[] {
                 </datalist>
               </label>
               <p v-if="reportData?.data.lastSuccessAt" class="admin-muted">{{ t('analytics.reportLastSuccess', { time: reportData.data.lastSuccessAt }) }}</p>
-              <p v-if="reportData?.data.lastError" class="admin-alert">{{ reportData.data.lastError }}</p>
+              <p v-if="reportData?.data.lastError" class="admin-alert" data-test="analytics-report-last-error">{{ reportData.data.lastError }}</p>
               <p v-if="reportMessage" class="admin-muted" data-test="analytics-report-settings-message">{{ reportMessage }}</p>
               <p v-if="reportSaveError" class="admin-alert" data-test="analytics-report-settings-save-error">{{ reportSaveError }}</p>
               <p v-if="reportRefreshWarning" class="admin-alert" data-test="analytics-report-settings-refresh-warning">{{ reportRefreshWarning }}</p>
-              <div class="settings-panel__footer"><button class="settings-panel__sync" type="button" :disabled="reportSyncing || !reportEnabled || reportData?.data.syncSupported !== true" @click="syncReport">{{ reportSyncing ? t('analytics.reportSyncing') : t('analytics.reportSync') }}</button><button class="settings-panel__save" type="submit" :disabled="reportSaving || reportPending || Boolean(reportLoadError)">{{ t('common.save') }}</button></div>
+              <div class="settings-panel__footer">
+                <button
+                  class="settings-panel__sync"
+                  type="button"
+                  :disabled="reportSyncing || !reportEnabled || reportData?.data.syncSupported !== true"
+                  @click="syncReport"
+                >
+                  {{ reportSyncing ? t('analytics.reportSyncing') : t('analytics.reportSync') }}
+                </button>
+                <button class="settings-panel__save" type="submit" :disabled="reportSaving || reportPending">
+                  {{ t('common.save') }}
+                </button>
+              </div>
             </form>
           </section>
         </section>
@@ -360,6 +400,18 @@ function integrationCapabilities(key: Tab['key']): IntegrationCapability[] {
   margin-top: 26px;
   padding-top: 22px;
   border-top: 1px solid var(--color-line);
+}
+
+.settings-analytics-notice {
+  margin: 0 0 18px;
+  max-width: 640px;
+}
+
+.settings-analytics-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .settings-section__heading {

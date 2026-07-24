@@ -3,7 +3,10 @@ import {
   MAX_ANALYTICS_REPORT_ARTICLES,
   MAX_ANALYTICS_REPORT_BYTES
 } from '../../../../server/domain/analytics-report'
-import { createPlausibleAnalyticsReportProvider } from '../../../../server/providers/analytics-report/plausible-analytics-report-provider'
+import {
+  createPlausibleAnalyticsReportProvider,
+  probePlausibleAnalyticsReport
+} from '../../../../server/providers/analytics-report/plausible-analytics-report-provider'
 
 const NOW = new Date('2026-07-19T12:00:00.000Z')
 
@@ -127,5 +130,24 @@ describe('Plausible analytics report provider', () => {
     await vi.advanceTimersByTimeAsync(1_000)
 
     await rejection
+  })
+
+  it('probes readiness with a single one-day, one-row Stats API query', async () => {
+    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(response([['/posts/a', 1]])))
+
+    await expect(probePlausibleAnalyticsReport({
+      baseUrl: 'https://plausible.example.com',
+      siteId: 'blog.example.com',
+      apiKey: 'secret-key',
+      fetchImpl,
+      now: () => NOW
+    })).resolves.toEqual({ ok: true })
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body))).toMatchObject({
+      site_id: 'blog.example.com',
+      date_range: ['2026-07-18T00:00:00.000Z', '2026-07-18T23:59:59.999Z'],
+      pagination: { limit: 1, offset: 0 }
+    })
   })
 })

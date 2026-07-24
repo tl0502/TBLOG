@@ -17,14 +17,28 @@ function isNonPublicIpLiteral(hostname: string): boolean {
   return ipaddr.parse(hostname).range() !== 'unicast'
 }
 
+/** Block localhost, private IP literals, and common non-routable / metadata hostnames. */
+function isBlockedOutboundHost(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname.endsWith('.localhost')
+    || hostname.endsWith('.local')
+    || hostname.endsWith('.internal')
+    || hostname.endsWith('.intranet')
+    || hostname === 'metadata'
+    || hostname === 'metadata.google.internal'
+    || hostname.endsWith('.metadata.google.internal')
+    || hostname === 'kubernetes.default'
+    || hostname === 'kubernetes.default.svc'
+    || isNonPublicIpLiteral(hostname)
+}
+
 export function validateAnalyticsReportEndpoint(value: unknown): string | null {
   try {
     const url = new URL(String(value))
     const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
     if (url.protocol !== 'https:') return 'Analytics report endpoint must use HTTPS'
     if (url.username || url.password || url.hash) return 'Analytics report endpoint must not contain credentials or fragments'
-    if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')
-      || isNonPublicIpLiteral(hostname)) {
+    if (isBlockedOutboundHost(hostname)) {
       return 'Analytics report endpoint must use a public host'
     }
     return null

@@ -67,7 +67,7 @@ describe('Plausible analytics report registration', () => {
     expect(plausibleAnalyticsReportRegistration.createAnalyticsReportProvider?.(config, {})).toBeNull()
   })
 
-  it('probes the Stats API with the secret supplied only through env', async () => {
+  it('probes the Stats API with a single lightweight query and the secret supplied only through env', async () => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(apiResponse()))
     const config = { baseUrl: DEFAULT_PLAUSIBLE_BASE_URL, siteId: 'blog.example.com', timeoutMs: 10_000 }
 
@@ -75,8 +75,16 @@ describe('Plausible analytics report registration', () => {
       PLAUSIBLE_API_KEY: 'secret-key',
       fetch
     })).resolves.toEqual({ status: 'active' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body))
+    expect(body.pagination).toEqual({ limit: 1, offset: 0 })
     expect(plausibleAnalyticsReportRegistration.publicProjection(config)).toEqual(config)
     expect(JSON.stringify(plausibleAnalyticsReportRegistration.publicProjection(config)))
       .not.toContain('secret-key')
+  })
+
+  it('rejects non-routable metadata hostnames for the base URL', () => {
+    expect(validatePlausibleBaseUrl('https://metadata.google.internal')).toContain('public host')
+    expect(validatePlausibleBaseUrl('https://stats.internal')).toContain('public host')
   })
 })

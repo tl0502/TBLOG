@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import ipaddr from 'ipaddr.js'
-import { createPlausibleAnalyticsReportProvider } from '../../providers/analytics-report/plausible-analytics-report-provider'
+import {
+  createPlausibleAnalyticsReportProvider,
+  probePlausibleAnalyticsReport,
+  type PlausibleAnalyticsProbeResult
+} from '../../providers/analytics-report/plausible-analytics-report-provider'
 import type { ProviderRegistration } from '../registry'
 
 const PLAUSIBLE_ANALYTICS_REPORT_PROVIDER_KEY = 'plausible'
@@ -18,6 +22,21 @@ function isNonPublicIpLiteral(hostname: string): boolean {
   return ipaddr.parse(hostname).range() !== 'unicast'
 }
 
+/** Block localhost, private IP literals, and common non-routable / metadata hostnames. */
+function isBlockedOutboundHost(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname.endsWith('.localhost')
+    || hostname.endsWith('.local')
+    || hostname.endsWith('.internal')
+    || hostname.endsWith('.intranet')
+    || hostname === 'metadata'
+    || hostname === 'metadata.google.internal'
+    || hostname.endsWith('.metadata.google.internal')
+    || hostname === 'kubernetes.default'
+    || hostname === 'kubernetes.default.svc'
+    || isNonPublicIpLiteral(hostname)
+}
+
 export function validatePlausibleBaseUrl(value: unknown): string | null {
   try {
     const url = new URL(String(value))
@@ -29,8 +48,7 @@ export function validatePlausibleBaseUrl(value: unknown): string | null {
     if (url.pathname !== '/' && url.pathname !== '') {
       return 'Plausible base URL must contain only the public origin'
     }
-    if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')
-      || isNonPublicIpLiteral(hostname)) {
+    if (isBlockedOutboundHost(hostname)) {
       return 'Plausible base URL must use a public host'
     }
     return null
@@ -39,22 +57,50 @@ export function validatePlausibleBaseUrl(value: unknown): string | null {
   }
 }
 
-function buildProvider(config: Record<string, unknown>, env: Record<string, unknown>) {
+function resolveRequestOptions(config: Record<string, unknown>, env: Record<string, unknown>) {
   const baseUrl = typeof config.baseUrl === 'string' ? config.baseUrl : DEFAULT_PLAUSIBLE_BASE_URL
   const siteId = typeof config.siteId === 'string' ? config.siteId.trim() : ''
   const apiKey = typeof env[PLAUSIBLE_API_KEY_SECRET] === 'string'
     ? (env[PLAUSIBLE_API_KEY_SECRET] as string).trim()
     : ''
   if (!apiKey || !siteId || validatePlausibleBaseUrl(baseUrl)) return null
-
-  return createPlausibleAnalyticsReportProvider({
-    providerKey: PLAUSIBLE_ANALYTICS_REPORT_PROVIDER_KEY,
+  return {
     baseUrl,
     siteId,
     apiKey,
     timeoutMs: typeof config.timeoutMs === 'number' ? config.timeoutMs : 10_000,
     fetchImpl: typeof env.fetch === 'function' ? env.fetch as typeof fetch : undefined
+  }
+}
+
+function buildProvider(config: Record<string, unknown>, env: Record<string, unknown>) {
+  const options = resolveRequestOptions(config, env)
+  if (!options) return null
+  return createPlausibleAnalyticsReportProvider({
+    providerKey: PLAUSIBLE_ANALYTICS_REPORT_PROVIDER_KEY,
+    ...options
   })
+}
+
+function probeError(result: Exclude<PlausibleAnalyticsProbeResult, { ok: true }>): string {
+  switch (result.reason) {
+    case 'authentication':
+      return 'Plausible authentication failed (HTTP 401); verify PLAUSIBLE_API_KEY and site access'
+    case 'permission':
+      return 'Plausible denied the request (HTTP 403); verify site ID and API key permissions'
+    case 'notFound':
+      return 'Plausible site or Stats API endpoint was not found (HTTP 404)'
+    case 'rateLimited':
+      return 'Plausible rate limit exceeded (HTTP 429); retry later'
+    case 'upstream':
+      return `Plausible service is unavailable (HTTP ${result.statusCode})`
+    case 'invalidResponse':
+      return 'Plausible Stats API response is invalid or exceeds probe limits'
+    case 'timeout':
+      return 'Plausible Stats API probe timed out'
+    case 'network':
+      return 'Unable to reach Plausible over public HTTPS; verify DNS, TLS, and base URL'
+  }
 }
 
 export const plausibleAnalyticsReportRegistration: ProviderRegistration = {
@@ -70,14 +116,12 @@ export const plausibleAnalyticsReportRegistration: ProviderRegistration = {
       || !(env[PLAUSIBLE_API_KEY_SECRET] as string).trim()) {
       return { status: 'unavailable', error: `Missing ${PLAUSIBLE_API_KEY_SECRET} secret` }
     }
-    const provider = buildProvider(config, env)
-    if (!provider) return { status: 'misconfigured', error: 'Plausible Analytics Report configuration is invalid' }
-    try {
-      await provider.fetchReport()
-      return { status: 'active' }
-    } catch {
-      return { status: 'unavailable', error: 'Plausible Stats API probe failed' }
-    }
+    const options = resolveRequestOptions(config, env)
+    if (!options) return { status: 'misconfigured', error: 'Plausible Analytics Report configuration is invalid' }
+    const result = await probePlausibleAnalyticsReport(options)
+    return result.ok
+      ? { status: 'active' }
+      : { status: 'unavailable', error: probeError(result) }
   },
   publicProjection(config) {
     return {

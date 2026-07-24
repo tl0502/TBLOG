@@ -30,6 +30,21 @@ function isNonPublicIpLiteral(hostname: string): boolean {
   return ipaddr.parse(hostname).range() !== 'unicast'
 }
 
+/** Block localhost, private IP literals, and common non-routable / metadata hostnames. */
+function isBlockedOutboundHost(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname.endsWith('.localhost')
+    || hostname.endsWith('.local')
+    || hostname.endsWith('.internal')
+    || hostname.endsWith('.intranet')
+    || hostname === 'metadata'
+    || hostname === 'metadata.google.internal'
+    || hostname.endsWith('.metadata.google.internal')
+    || hostname === 'kubernetes.default'
+    || hostname === 'kubernetes.default.svc'
+    || isNonPublicIpLiteral(hostname)
+}
+
 export function validateUmamiApiBaseUrl(value: unknown): string | null {
   try {
     const url = new URL(String(value))
@@ -38,8 +53,7 @@ export function validateUmamiApiBaseUrl(value: unknown): string | null {
     if (url.username || url.password || url.search || url.hash) {
       return 'Umami API base URL must not contain credentials, query parameters, or fragments'
     }
-    if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')
-      || isNonPublicIpLiteral(hostname)) {
+    if (isBlockedOutboundHost(hostname)) {
       return 'Umami API base URL must use a public host'
     }
     return null

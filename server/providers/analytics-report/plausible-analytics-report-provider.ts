@@ -51,15 +51,92 @@ async function sourceRevision(source: Omit<AnalyticsReportSource, 'schemaVersion
     .join('')}`
 }
 
-export function createPlausibleAnalyticsReportProvider(options: {
-  providerKey: string
+export type PlausibleAnalyticsProbeResult =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'authentication' | 'permission' | 'notFound' | 'rateLimited' | 'upstream'
+        | 'invalidResponse' | 'timeout' | 'network'
+      statusCode?: number
+    }
+
+export interface PlausibleAnalyticsRequestOptions {
   baseUrl: string
   siteId: string
   apiKey: string
   timeoutMs?: number
   fetchImpl?: typeof fetch
   now?: () => Date
-}): AnalyticsReportProvider {
+}
+
+function requestHeaders(apiKey: string): Record<string, string> {
+  return {
+    accept: 'application/json',
+    authorization: `Bearer ${apiKey}`,
+    'content-type': 'application/json',
+    'user-agent': 'tblog-plausible-analytics-report/1.0'
+  }
+}
+
+/** Single lightweight Stats API call used for enable/test readiness (not a full report pull). */
+export async function probePlausibleAnalyticsReport(
+  options: PlausibleAnalyticsRequestOptions
+): Promise<PlausibleAnalyticsProbeResult> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const now = options.now ?? (() => new Date())
+  const endExclusive = completeUtcDay(now())
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000)
+
+  try {
+    let response: Response
+    try {
+      response = await fetchImpl(new URL(PLAUSIBLE_QUERY_PATH, options.baseUrl), {
+        method: 'POST',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: requestHeaders(options.apiKey),
+        body: JSON.stringify({
+          site_id: options.siteId,
+          metrics: ['pageviews'],
+          date_range: utcRange(endExclusive, 1),
+          dimensions: ['event:page'],
+          filters: [['matches', 'event:page', ['^/posts/[^/]+$']]],
+          order_by: [['pageviews', 'desc'], ['event:page', 'asc']],
+          include: { total_rows: true },
+          pagination: { limit: 1, offset: 0 }
+        })
+      })
+    } catch {
+      return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'network' }
+    }
+
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      if (response.status === 401) return { ok: false, reason: 'authentication', statusCode: 401 }
+      if (response.status === 403) return { ok: false, reason: 'permission', statusCode: 403 }
+      if (response.status === 404) return { ok: false, reason: 'notFound', statusCode: 404 }
+      if (response.status === 429) return { ok: false, reason: 'rateLimited', statusCode: 429 }
+      return { ok: false, reason: 'upstream', statusCode: response.status }
+    }
+
+    try {
+      const parsed = plausibleResponseSchema.safeParse(await readBoundedAnalyticsJson(response))
+      if (!parsed.success || parsed.data.results.length > 1) {
+        return { ok: false, reason: 'invalidResponse' }
+      }
+      return { ok: true }
+    } catch {
+      return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'invalidResponse' }
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export function createPlausibleAnalyticsReportProvider(options: {
+  providerKey: string
+} & PlausibleAnalyticsRequestOptions): AnalyticsReportProvider {
   const fetchImpl = options.fetchImpl ?? fetch
   const now = options.now ?? (() => new Date())
 
@@ -79,12 +156,7 @@ export function createPlausibleAnalyticsReportProvider(options: {
             method: 'POST',
             redirect: 'error',
             signal: controller.signal,
-            headers: {
-              accept: 'application/json',
-              authorization: `Bearer ${options.apiKey}`,
-              'content-type': 'application/json',
-              'user-agent': 'tblog-plausible-analytics-report/1.0'
-            },
+            headers: requestHeaders(options.apiKey),
             body: JSON.stringify({
               site_id: options.siteId,
               metrics: ['pageviews'],

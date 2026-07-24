@@ -283,7 +283,23 @@ export function createAnalyticsReportService(deps: {
     const [state, current] = await Promise.all([deps.stateRepository.getState(), selected()])
     if (scheduled && !isDue(state, now)) return status(now)
     if (!state.enabled) throw new DomainError('analytics_report_disabled', 'Analytics report synchronization is disabled', 409)
-    if (!current) throw new DomainError('analytics_report_provider_unavailable', 'Analytics report provider is not configured', 409)
+    if (!current) {
+      // Scheduled polls must not throw on permanent misconfiguration (missing provider): record the
+      // failure for the admin UI and return status so the cron task stays healthy. Manual sync still
+      // rejects so the operator gets an explicit API error.
+      if (scheduled) {
+        const skipRunId = crypto.randomUUID()
+        if (await deps.stateRepository.tryStartRun(skipRunId, now, new Date(now.getTime() + SYNC_LEASE_MS))) {
+          await deps.stateRepository.markFailure(
+            skipRunId,
+            now,
+            'Analytics report provider is not configured'
+          ).catch(() => false)
+        }
+        return status(now)
+      }
+      throw new DomainError('analytics_report_provider_unavailable', 'Analytics report provider is not configured', 409)
+    }
 
     const runId = crypto.randomUUID()
     if (!await deps.stateRepository.tryStartRun(runId, now, new Date(now.getTime() + SYNC_LEASE_MS))) {

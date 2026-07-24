@@ -77,4 +77,24 @@ describe('administrator analytics report routes', () => {
       dayOfWeek: 'fri'
     }, ['maintenance:*'])
   })
+
+  it('normalizes HTML time values that include seconds before updating settings', async () => {
+    const updateSettings = vi.fn().mockResolvedValue({ timeOfDay: '05:30' })
+    vi.mocked(createAnalyticsReportServiceForEvent).mockReturnValue({ updateSettings } as never)
+    vi.stubGlobal('readBody', vi.fn().mockResolvedValue({
+      enabled: true,
+      schedule: 'daily',
+      timeOfDay: '05:30:00',
+      timezone: 'UTC',
+      dayOfWeek: 'mon'
+    }))
+    const request = event()
+
+    await expect((settingsRoute as Handler)(request)).resolves.toEqual({
+      data: { timeOfDay: '05:30' }, meta: {}
+    })
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      timeOfDay: '05:30'
+    }), ['maintenance:*'])
+  })
 })

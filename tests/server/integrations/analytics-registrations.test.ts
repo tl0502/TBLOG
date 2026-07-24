@@ -183,6 +183,8 @@ describe('analytics provider registrations', () => {
     expect(validateAnalyticsReportEndpoint('https://[febf::1]/report')).toContain('public host')
     expect(validateAnalyticsReportEndpoint('https://[::ffff:127.0.0.1]/report')).toContain('public host')
     expect(validateAnalyticsReportEndpoint('https://0x7f000001/report')).toContain('public host')
+    expect(validateAnalyticsReportEndpoint('https://metadata.google.internal/report')).toContain('public host')
+    expect(validateAnalyticsReportEndpoint('https://stats.internal/report')).toContain('public host')
   })
 
   it('registers the report provider separately from browser collection scripts', () => {

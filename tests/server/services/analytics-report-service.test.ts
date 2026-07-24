@@ -261,8 +261,8 @@ describe('analytics report service', () => {
     expect(provider.fetchReport).toHaveBeenCalledOnce()
   })
 
-  it('reports a due schedule and rejects synchronization when no report provider is configured', async () => {
-    const { service, provider } = setup({
+  it('reports a due schedule and soft-fails scheduled sync when no report provider is configured', async () => {
+    const { service, provider, stateRepository } = setup({
       providerConfigured: false,
       state: { schedule: 'hourly' }
     })
@@ -272,7 +272,21 @@ describe('analytics report service', () => {
       syncSupported: false,
       configuredProvider: null
     })
-    await expect(service.syncDue(new Date('2026-07-19T00:00:00.000Z'))).rejects.toMatchObject({
+    await expect(service.syncDue(new Date('2026-07-19T00:00:00.000Z'))).resolves.toMatchObject({
+      syncSupported: false,
+      lastError: 'Analytics report provider is not configured'
+    })
+    expect(stateRepository.markFailure).toHaveBeenCalledOnce()
+    expect(provider.fetchReport).not.toHaveBeenCalled()
+  })
+
+  it('still rejects manual synchronization when no report provider is configured', async () => {
+    const { service, provider } = setup({
+      providerConfigured: false,
+      state: { schedule: 'hourly' }
+    })
+
+    await expect(service.sync(['maintenance:*'])).rejects.toMatchObject({
       code: 'analytics_report_provider_unavailable',
       statusCode: 409
     })
