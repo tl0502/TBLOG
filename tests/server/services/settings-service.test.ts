@@ -192,6 +192,41 @@ describe('settings service', () => {
     expect(store.get('comment')).toMatchObject({ autoModerationEnabled: true })
   })
 
+  it('refuses automatic moderation when more than one moderation integration is active', async () => {
+    const { repository, store } = createFakeRepo()
+    const integrationRepository: IntegrationSettingsRepository = {
+      async list() {
+        return [
+          {
+            capability: 'commentModeration', providerKey: 'http', enabled: true,
+            publicConfigJson: JSON.stringify({ endpoint: 'https://moderation.example.com' }),
+            status: 'active', lastCheckedAt: new Date(), lastError: null, updatedAt: new Date()
+          },
+          {
+            capability: 'commentModeration', providerKey: 'openai', enabled: true,
+            publicConfigJson: JSON.stringify({ model: 'gpt-4.1-mini' }),
+            status: 'active', lastCheckedAt: new Date(), lastError: null, updatedAt: new Date()
+          }
+        ]
+      },
+      async findByCapabilityAndProvider() { return null },
+      async upsert() {},
+      async upsertExclusive() {},
+      async touch() {}
+    }
+    const service = createSettingsService({
+      settingsRepository: repository,
+      integrationRepository,
+      cache: createFakeCache().cache
+    })
+
+    await expect(service.updateDomain('comment', {
+      ...settingsDefaults.comment,
+      autoModerationEnabled: true
+    })).rejects.toMatchObject({ code: 'integration_required', statusCode: 422 })
+    expect(store.has('comment')).toBe(false)
+  })
+
   it('reads the public site projection through the site-settings cache', async () => {
     const { service, getDomain, cacheGet, cacheSet } = createService()
 

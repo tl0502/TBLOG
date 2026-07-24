@@ -358,8 +358,9 @@ export const commentSettingsInputSchema = z.object({
   turnstileSiteKey: nullableText(200).optional().default(null),
   rateLimit: z
     .object({
-      windowSeconds: z.number().int().min(0).max(86_400).nullable().optional().default(null),
-      maxPerWindow: z.number().int().min(0).max(100_000).nullable().optional().default(null)
+      // null = use runtime defaults (60s / 5). Zero is rejected so "off" is never ambiguous.
+      windowSeconds: z.number().int().min(1).max(86_400).nullable().optional().default(null),
+      maxPerWindow: z.number().int().min(1).max(1_000).nullable().optional().default(null)
     })
     .optional()
     .default({ windowSeconds: null, maxPerWindow: null })

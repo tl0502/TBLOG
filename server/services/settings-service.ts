@@ -9,6 +9,7 @@ import {
   type SettingsDomain
 } from '../domain/settings'
 import { settingsError } from '../domain/settings-errors'
+import { selectActiveCommentModerationRow } from '../providers/comment-moderation/comment-moderation-provider-factory'
 import type { SettingsRepository } from '../repositories/contracts/settings-repositories'
 import type { IntegrationSettingsRepository } from '../repositories/contracts/integration-repositories'
 import { cacheKeys } from '../utils/cache-keys'
@@ -89,17 +90,12 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
       if (resolved === 'comment') {
         const comment = input as SettingsByDomain['comment']
         if (comment.enabled && comment.autoModerationEnabled) {
-          const integrations = await dependencies.integrationRepository?.list()
-          const moderationReady = integrations?.some(
-            (row) =>
-              row.capability === 'commentModeration' &&
-              row.enabled &&
-              row.status === 'active'
-          )
-          if (!moderationReady) {
+          // Match runtime provider resolution: exactly one enabled+active moderation integration.
+          const integrations = await dependencies.integrationRepository?.list() ?? []
+          if (!selectActiveCommentModerationRow(integrations)) {
             throw settingsError(
               'integration_required',
-              'Enable a healthy comment moderation integration before automatic moderation',
+              'Enable exactly one healthy comment moderation integration before automatic moderation',
               422
             )
           }
@@ -107,6 +103,7 @@ export function createSettingsService(dependencies: SettingsServiceDependencies)
         value = {
           ...comment,
           autoModerationEnabled: comment.enabled ? comment.autoModerationEnabled : false,
+          // Turnstile site keys live under Integrations → Comment protection.
           turnstileSiteKey: null
         } as SettingsByDomain[TDomain]
       } else if (resolved === 'media') {

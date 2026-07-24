@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_D1_SETTINGS_JSON_BYTES,
+  commentSettingsInputSchema,
   homeSettingsInputSchema,
   mediaSettingsInputSchema,
   profileSettingsInputSchema,
@@ -116,6 +117,25 @@ describe('settings URL input validation', () => {
       .toBe('noindex,nofollow')
     expect(() => seoSettingsInputSchema.parse({ robotsPolicy: 'index, follow, max-snippet:-1' }))
       .toThrow()
+  })
+
+  it('accepts null comment rate limits and rejects zero or out-of-range values', () => {
+    expect(commentSettingsInputSchema.parse({}).rateLimit).toEqual({
+      windowSeconds: null,
+      maxPerWindow: null
+    })
+    expect(commentSettingsInputSchema.parse({
+      rateLimit: { windowSeconds: 120, maxPerWindow: 8 }
+    }).rateLimit).toEqual({ windowSeconds: 120, maxPerWindow: 8 })
+    expect(() => commentSettingsInputSchema.parse({
+      rateLimit: { windowSeconds: 0, maxPerWindow: 5 }
+    })).toThrow()
+    expect(() => commentSettingsInputSchema.parse({
+      rateLimit: { windowSeconds: 60, maxPerWindow: 0 }
+    })).toThrow()
+    expect(() => commentSettingsInputSchema.parse({
+      rateLimit: { windowSeconds: 60, maxPerWindow: 1001 }
+    })).toThrow()
   })
 
   it.each(['https://blog.example', 'http://localhost:3000/blog', '  https://blog.example/  '])(
